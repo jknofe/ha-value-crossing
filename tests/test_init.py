@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from homeassistant.core import HomeAssistant
+from datetime import timedelta
+from unittest.mock import patch
+
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.value_crossing.const import (
@@ -12,6 +16,7 @@ from custom_components.value_crossing.const import (
     CONF_SENSOR_A,
     CONF_SENSOR_B,
     DOMAIN,
+    STATUS_INSUFFICIENT_DATA,
 )
 
 
@@ -63,6 +68,79 @@ async def test_setup_creates_four_entities(hass: HomeAssistant) -> None:
     assert hass.states.get(eta.entity_id).state == "unknown"
     until = _by_suffix(entities, "_time_until_crossover")
     assert hass.states.get(until.entity_id).state == "unknown"
+
+
+class _FakeRecorder:
+    """Runs the executor job inline so backfill needs no real recorder thread."""
+
+    async def async_add_executor_job(self, func, *args):
+        return func(*args)
+
+
+def _hist(entity_id, points, now):
+    """Build recorder-style State objects at ``now - offset`` seconds."""
+    return [
+        State(entity_id, str(v), last_changed=now - timedelta(seconds=off))
+        for off, v in points
+    ]
+
+
+async def test_backfill_primes_estimate_from_history(hass: HomeAssistant) -> None:
+    _set(hass, "sensor.a", "20")
+    _set(hass, "sensor.b", "14")
+    hass.config.components.add("recorder")
+    entry = _entry(hass)
+
+    now = dt_util.utcnow()
+    # 6 evenly-spaced points so diff = a - b is a clean line 10 -> 6 heading
+    # toward the band (>= the exponential model's 5-sample minimum; the straight
+    # line makes the exp fit reject and fall back to linear -> a real ETA).
+    offs = [600, 480, 360, 240, 120, 0]
+    b_vals = [10.0, 10.8, 11.6, 12.4, 13.2, 14.0]
+    history = {
+        "sensor.a": _hist("sensor.a", [(o, 20.0) for o in offs], now),
+        "sensor.b": _hist("sensor.b", list(zip(offs, b_vals, strict=True)), now),
+    }
+
+    with (
+        patch(
+            "homeassistant.components.recorder.get_instance",
+            return_value=_FakeRecorder(),
+        ),
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value=history,
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    until = _by_suffix(entities, "_time_until_crossover")
+    state = hass.states.get(until.entity_id)
+    # Estimate is populated at first render, without any new live update.
+    assert state.state != "unknown"
+    assert state.attributes["status"] != STATUS_INSUFFICIENT_DATA
+
+
+async def test_backfill_absent_recorder_stays_insufficient(
+    hass: HomeAssistant,
+) -> None:
+    # No "recorder" component -> backfill is skipped, estimate stays cold.
+    _set(hass, "sensor.a", "20")
+    _set(hass, "sensor.b", "14")
+    entry = _entry(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    until = _by_suffix(entities, "_time_until_crossover")
+    state = hass.states.get(until.entity_id)
+    assert state.state == "unknown"
+    assert state.attributes["status"] == STATUS_INSUFFICIENT_DATA
 
 
 async def test_difference_and_crossed_update_live(hass: HomeAssistant) -> None:

@@ -21,6 +21,7 @@ from custom_components.value_crossing.estimation import (
     effective_model,
     estimate_crossing,
     get_model,
+    merge_difference_series,
 )
 from custom_components.value_crossing.kinds import GenericKind, TemperatureKind
 
@@ -61,6 +62,38 @@ def test_rolling_buffer_caps_samples() -> None:
     for i in range(5):
         buf.add(i, float(i))
     assert buf.samples() == [(3, 3.0), (4, 4.0)]
+
+
+# --- merge_difference_series (LOGIC-03 backfill) ----------------------------
+
+
+def test_merge_forward_fills_both_sides() -> None:
+    # A at t=0,2; B at t=1,3. Diff emitted once both known, on each event.
+    a = [(0.0, 10.0), (2.0, 8.0)]
+    b = [(1.0, 4.0), (3.0, 5.0)]
+    assert merge_difference_series(a, b) == [
+        (1.0, 6.0),  # a=10, b=4
+        (2.0, 4.0),  # a=8,  b=4
+        (3.0, 3.0),  # a=8,  b=5
+    ]
+
+
+def test_merge_waits_until_both_known() -> None:
+    # Only A has points -> never both known -> nothing emitted.
+    assert merge_difference_series([(0.0, 1.0), (1.0, 2.0)], []) == []
+
+
+def test_merge_unsorted_input_is_ordered() -> None:
+    a = [(2.0, 8.0), (0.0, 10.0)]
+    b = [(0.0, 4.0)]
+    assert merge_difference_series(a, b) == [(0.0, 6.0), (2.0, 4.0)]
+
+
+def test_merge_same_timestamp_both_update_once() -> None:
+    # A and B both change at t=1: one combined sample using both new values.
+    a = [(0.0, 10.0), (1.0, 7.0)]
+    b = [(0.0, 4.0), (1.0, 5.0)]
+    assert merge_difference_series(a, b) == [(0.0, 6.0), (1.0, 2.0)]
 
 
 # --- linear model -----------------------------------------------------------
