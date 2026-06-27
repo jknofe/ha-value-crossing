@@ -31,3 +31,18 @@ MODEL_POWER = "power"
 
 # Sentinel for a per-pair model override meaning "use the resolved kind's default".
 MODEL_AUTO = "auto"
+
+# Estimation fit window (LOGIC-01).
+CONF_WINDOW = "window"  # seconds of recent history fed to the fit
+DEFAULT_WINDOW = 1800  # 30 minutes
+MAX_SAMPLES = 600  # hard cap on the rolling buffer
+MIN_SAMPLES_LINEAR = 2
+MIN_SAMPLES_EXPONENTIAL = 5
+
+# Estimate status (exposed as the time/ETA sensors' `status` attribute).
+STATUS_OK = "ok"  # a future crossing is predicted
+STATUS_WITHIN_BAND = "within_band"  # already crossed (time 0 / ETA now)
+STATUS_DIVERGING = "diverging"  # trend moves away from / never reaches the band
+STATUS_ASYMPTOTE_OUTSIDE_BAND = "asymptote_outside_band"  # exp asymptote outside band
+STATUS_INSUFFICIENT_DATA = "insufficient_data"  # not enough samples yet
+STATUS_FIT_FAILED = "fit_failed"  # degenerate/ill-conditioned fit
