@@ -19,16 +19,46 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
 )
 
 from .const import (
     CONF_BAND,
+    CONF_MODEL,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
+    CONF_WINDOW,
+    DEFAULT_WINDOW,
     DOMAIN,
+    MODEL_AUTO,
+    MODEL_EXPONENTIAL,
+    MODEL_LINEAR,
 )
 from .kinds import resolve
+
+
+def _model_window_fields(model_default: str, window_default: float) -> dict:
+    """Schema entries for the per-pair model override + fit window."""
+    return {
+        vol.Required(CONF_MODEL, default=model_default): SelectSelector(
+            SelectSelectorConfig(
+                options=[MODEL_AUTO, MODEL_EXPONENTIAL, MODEL_LINEAR],
+                translation_key="model",
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(CONF_WINDOW, default=window_default): NumberSelector(
+            NumberSelectorConfig(
+                mode=NumberSelectorMode.BOX,
+                min=60,
+                step=60,
+                unit_of_measurement="s",
+            )
+        ),
+    }
 
 
 def _unit_of(hass, entity_id: str | None) -> str | None:
@@ -97,6 +127,8 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_SENSOR_A: self._sensor_a,
                         CONF_SENSOR_B: sensor_b,
                         CONF_BAND: user_input[CONF_BAND],
+                        CONF_MODEL: user_input[CONF_MODEL],
+                        CONF_WINDOW: user_input[CONF_WINDOW],
                     },
                 )
 
@@ -109,6 +141,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_BAND, default=kind.default_band): NumberSelector(
                     NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any")
                 ),
+                **_model_window_fields(MODEL_AUTO, DEFAULT_WINDOW),
             }
         )
         return self.async_show_form(
@@ -150,6 +183,10 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_BAND, default=current[CONF_BAND]
                 ): NumberSelector(
                     NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any")
+                ),
+                **_model_window_fields(
+                    current.get(CONF_MODEL, MODEL_AUTO),
+                    current.get(CONF_WINDOW, DEFAULT_WINDOW),
                 ),
             }
         )

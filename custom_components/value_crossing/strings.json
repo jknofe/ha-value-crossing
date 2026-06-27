@@ -18,27 +18,35 @@
         "description": "Pick the second sensor (same unit as Sensor A) and the band.",
         "data": {
           "sensor_b": "Sensor B",
-          "band": "Band"
+          "band": "Band",
+          "model": "Estimation model",
+          "window": "Fit window (seconds)"
         },
         "data_description": {
           "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
-          "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value."
+          "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value.",
+          "model": "How the crossing time is estimated. Auto picks a model from the sensor type.",
+          "window": "How much recent history feeds the estimate."
         }
       },
       "reconfigure": {
         "title": "Edit value-crossing pair",
-        "description": "Change the sensors or the band for this pair. Both sensors must share a unit.",
+        "description": "Change the sensors, band, model or window for this pair. Both sensors must share a unit.",
         "data": {
           "name": "Name",
           "sensor_a": "Sensor A",
           "sensor_b": "Sensor B",
-          "band": "Band"
+          "band": "Band",
+          "model": "Estimation model",
+          "window": "Fit window (seconds)"
         },
         "data_description": {
           "name": "Friendly name for this pair.",
           "sensor_a": "The first sensor to track.",
           "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
-          "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value."
+          "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value.",
+          "model": "How the crossing time is estimated. Auto picks a model from the sensor type.",
+          "window": "How much recent history feeds the estimate."
         }
       }
     },
@@ -47,6 +55,15 @@
     },
     "abort": {
       "reconfigure_successful": "Pair updated."
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "auto": "Auto (based on sensor type)",
+        "exponential": "Exponential (slow, limit-bound; e.g. temperature)",
+        "linear": "Linear (steady trend)"
+      }
     }
   },
   "entity": {
