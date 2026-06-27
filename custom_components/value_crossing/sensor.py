@@ -1,8 +1,8 @@
 """Sensor platform for value_crossing.
 
-Three sensors per pair: the live signed difference, plus two placeholder time
-sensors (time-until-crossover, crossover ETA) that report ``unknown`` until
-LOGIC-01/02 implement the estimation.
+Three sensors per pair: the live signed difference, the time-until-crossover
+(shown as ``H:MM``), and the wall-clock crossover ETA. The two time sensors are
+fed by the estimation model and report ``unknown`` when no crossing is predicted.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -65,25 +64,34 @@ class DifferenceSensor(ValueCrossingEntity, SensorEntity):
         return SensorDeviceClass(dc) if dc else None
 
 
-class TimeUntilCrossoverSensor(ValueCrossingEntity, SensorEntity):
-    """Seconds until the pair crosses, from the estimation model (LOGIC-01)."""
+def _format_hm(seconds: float | None) -> str | None:
+    """Render a duration in seconds as ``H:MM`` (hours may exceed 24)."""
+    if seconds is None:
+        return None
+    total_minutes = round(seconds / 60)
+    return f"{total_minutes // 60}:{total_minutes % 60:02d}"
 
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+
+class TimeUntilCrossoverSensor(ValueCrossingEntity, SensorEntity):
+    """Time until the pair crosses, shown as ``H:MM`` (estimation model)."""
 
     def __init__(self, coordinator) -> None:
         """Init the time-until-crossover sensor."""
         super().__init__(coordinator, KEY_TIME_UNTIL)
 
     @property
-    def native_value(self) -> float | None:
-        """Seconds until crossing, or None when no crossing is predicted."""
-        return self.coordinator.estimate.seconds_until
+    def native_value(self) -> str | None:
+        """``H:MM`` until crossing, or None when no crossing is predicted."""
+        return _format_hm(self.coordinator.estimate.seconds_until)
 
     @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Surface why there is (or isn't) a crossing estimate."""
-        return {"status": self.coordinator.estimate.status}
+    def extra_state_attributes(self) -> dict[str, str | float]:
+        """Surface the estimate status and the raw seconds for automations."""
+        estimate = self.coordinator.estimate
+        attrs: dict[str, str | float] = {"status": estimate.status}
+        if estimate.seconds_until is not None:
+            attrs["seconds"] = estimate.seconds_until
+        return attrs
 
 
 class CrossoverEtaSensor(ValueCrossingEntity, SensorEntity):
