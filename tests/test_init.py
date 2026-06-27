@@ -70,16 +70,6 @@ async def test_setup_creates_four_entities(hass: HomeAssistant) -> None:
     assert hass.states.get(until.entity_id).state == "unknown"
 
 
-def test_time_until_formats_as_hours_minutes() -> None:
-    from custom_components.value_crossing.sensor import _format_hm
-
-    assert _format_hm(None) is None
-    assert _format_hm(0) == "0:00"
-    assert _format_hm(12688) == "3:31"  # the live 3.5h example
-    assert _format_hm(3599) == "1:00"  # rounds up to a full hour
-    assert _format_hm(90000) == "25:00"  # hours may exceed 24
-
-
 class _FakeRecorder:
     """Runs the executor job inline so backfill needs no real recorder thread."""
 
