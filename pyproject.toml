@@ -1,0 +1,15 @@
+[project]
+name = "ha-value-crossing"
+version = "0.0.1"
+description = "Home Assistant helper integration: value-crossing time estimation"
+requires-python = ">=3.13"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
