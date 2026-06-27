@@ -1,0 +1,24 @@
+{
+  "entity": {
+    "sensor": {
+      "difference": {
+        "default": "mdi:delta"
+      },
+      "crossover_value": {
+        "default": "mdi:vector-intersection"
+      },
+      "crossover_eta": {
+        "default": "mdi:clock-outline"
+      }
+    },
+    "binary_sensor": {
+      "crossed": {
+        "default": "mdi:approximately-equal",
+        "state": {
+          "off": "mdi:not-equal-variant",
+          "on": "mdi:approximately-equal"
+        }
+      }
+    }
+  }
+}
