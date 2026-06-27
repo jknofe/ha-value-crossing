@@ -55,9 +55,11 @@ and search for **Value Crossing**. The setup runs in two steps:
 
 1. Name the pair and pick **Sensor A**.
 2. Pick **Sensor B** (it must share Sensor A's unit), then set the **band**, the
-   **estimation model** (`auto`, `exponential`, or `linear`), and the **fit
+   **estimation model** (`auto`, `exponential`, or `linear`), the **fit
    window** in seconds (how much recent history feeds the estimate; default
-   1800).
+   1800), and optionally **Use last-day history pattern** (project the more
+   dynamic sensor along its own shape from the previous 24 hours instead of a
+   short straight-line trend; best for daily-cyclic signals like temperature).
 
 Each pair is its own integration entry. You can change any of these later with
 **Reconfigure** on the device. Add another pair by adding the integration again.

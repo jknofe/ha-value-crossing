@@ -13,15 +13,20 @@ from custom_components.value_crossing.const import (
     STATUS_ASYMPTOTE_OUTSIDE_BAND,
     STATUS_DIVERGING,
     STATUS_INSUFFICIENT_DATA,
+    STATUS_NO_CROSSING_HORIZON,
     STATUS_OK,
     STATUS_WITHIN_BAND,
 )
 from custom_components.value_crossing.estimation import (
     RollingBuffer,
+    bin_hourly_means,
     effective_model,
     estimate_crossing,
     get_model,
     merge_difference_series,
+    profile_at,
+    profile_range,
+    project_daily_crossing,
     project_value,
 )
 from custom_components.value_crossing.kinds import GenericKind, TemperatureKind
@@ -46,6 +51,101 @@ def test_project_value_flat_series_holds() -> None:
 def test_project_value_insufficient_samples_is_none() -> None:
     assert project_value([(0.0, 5.0)], 60.0) is None
     assert project_value([], 60.0) is None
+
+
+# --- daily-pattern profiles (LOGIC-05) --------------------------------------
+
+# Hour-of-day is ``(epoch % 86400) / 3600`` (UTC). A whole-day base keeps the
+# arithmetic exact: ``now`` sits at hour-of-day 12.
+_DAY = 19000
+_NOW_EPOCH = _DAY * 86400 + 12 * 3600
+
+
+def test_bin_hourly_means_buckets_and_drops_old() -> None:
+    samples = [
+        (_NOW_EPOCH - 2 * 3600, 5.0),  # hour 10
+        (_NOW_EPOCH - 2 * 3600 + 60, 7.0),  # hour 10 again -> mean 6
+        (_NOW_EPOCH - 22 * 3600, 20.0),  # hour 14 (yesterday), within window
+        (_NOW_EPOCH - 30 * 3600, 99.0),  # older than 24h -> ignored
+    ]
+    profile = bin_hourly_means(samples, _NOW_EPOCH)
+    assert len(profile) == 24
+    assert profile[10] == 6.0
+    assert profile[14] == 20.0
+    assert profile[0] is None
+    assert profile[12] is None
+
+
+def test_profile_at_interpolates_and_wraps() -> None:
+    profile: list[float | None] = [None] * 24
+    profile[10], profile[11] = 10.0, 20.0
+    assert profile_at(profile, 10.0) == 10.0
+    assert profile_at(profile, 10.5) == 15.0
+
+    wrap: list[float | None] = [None] * 24
+    wrap[23], wrap[0] = 4.0, 8.0
+    assert profile_at(wrap, 23.5) == 6.0  # 23 -> 0 wrap
+
+    gap: list[float | None] = [None] * 24
+    gap[5] = 3.0
+    assert profile_at(gap, 5.5) == 3.0  # hi unknown -> lo
+    assert profile_at(gap, 4.5) == 3.0  # lo unknown -> hi
+    assert profile_at([None] * 24, 12.3) is None
+
+
+def test_profile_range_peak_to_peak() -> None:
+    profile: list[float | None] = [None] * 24
+    profile[3], profile[8], profile[15] = 2.0, 9.0, 5.0
+    assert profile_range(profile) == 7.0
+    assert profile_range([None] * 24) == 0.0
+
+
+def test_project_daily_within_band_now() -> None:
+    ramp = [float(h) for h in range(24)]
+    secs, status = project_daily_crossing(
+        ramp, anchor=10.0, now=_NOW_EPOCH, held=10.0, band=0.5
+    )
+    assert status == STATUS_WITHIN_BAND
+    assert secs == 0.0
+
+
+def test_project_daily_finds_crossing() -> None:
+    ramp = [float(h) for h in range(24)]
+    # anchor==profile_at(12)==12 so shift 0; near edge 14.5 reached at hour 14.5.
+    secs, status = project_daily_crossing(
+        ramp, anchor=12.0, now=_NOW_EPOCH, held=15.0, band=0.5
+    )
+    assert status == STATUS_OK
+    assert 2.4 * 3600 < secs < 2.6 * 3600
+
+
+def test_project_daily_anchor_shifts_curve() -> None:
+    ramp = [float(h) for h in range(24)]
+    # shift = 100 - 12 = 88; near edge 102.5 reached when profile==14.5 (hour 14.5).
+    secs, status = project_daily_crossing(
+        ramp, anchor=100.0, now=_NOW_EPOCH, held=103.0, band=0.5
+    )
+    assert status == STATUS_OK
+    assert 2.4 * 3600 < secs < 2.6 * 3600
+
+
+def test_project_daily_no_crossing_in_horizon() -> None:
+    flat = [0.0] * 24
+    secs, status = project_daily_crossing(
+        flat, anchor=0.0, now=_NOW_EPOCH, held=100.0, band=1.0
+    )
+    assert status == STATUS_NO_CROSSING_HORIZON
+    assert secs is None
+
+
+def test_project_daily_unanchorable_is_insufficient() -> None:
+    profile: list[float | None] = [None] * 24
+    profile[3] = 5.0  # nothing known near hour 12 -> cannot anchor at now
+    secs, status = project_daily_crossing(
+        profile, anchor=5.0, now=_NOW_EPOCH, held=5.0, band=0.1
+    )
+    assert status == STATUS_INSUFFICIENT_DATA
+    assert secs is None
 
 
 # --- dispatch + override ----------------------------------------------------

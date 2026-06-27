@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BAND,
+    CONF_DAILY_HISTORY,
     CONF_MODEL,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
@@ -28,15 +29,20 @@ from .const import (
     CONF_WINDOW,
     DEFAULT_WINDOW,
     INHERITABLE_DEVICE_CLASSES,
+    PROFILE_HOURS,
     STATUS_INSUFFICIENT_DATA,
+    STATUS_OK,
     STATUS_WITHIN_BAND,
 )
 from .estimation import (
     Estimate,
     RollingBuffer,
+    bin_hourly_means,
     effective_model,
     estimate_crossing,
     merge_difference_series,
+    profile_range,
+    project_daily_crossing,
     project_value,
 )
 from .kinds import resolve
@@ -70,6 +76,48 @@ def _history_points(states) -> list[tuple[float, float]]:
     return points
 
 
+Profile = list[float | None]
+
+
+def _normalize_profile(profile: Profile) -> Profile | None:
+    """Treat an all-empty hourly profile as no profile at all."""
+    return profile if any(v is not None for v in profile) else None
+
+
+def _stat_epoch(value) -> float | None:
+    """Epoch seconds from a statistics row ``start`` (datetime or float)."""
+    if isinstance(value, datetime):
+        return value.timestamp()
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _profiles_from_stats(
+    rows, now: datetime
+) -> tuple[Profile | None, Profile | None, Profile | None]:
+    """Build (mean, min, max) hourly profiles from statistics rows, or Nones.
+
+    Each profile is binned by hour-of-day; a type yields ``None`` when no row
+    carries it. Returns all-None when there are no rows at all.
+    """
+
+    def _profile(key: str) -> Profile | None:
+        points = [
+            (_stat_epoch(r.get("start")), r.get(key))
+            for r in rows
+            if r.get(key) is not None and _stat_epoch(r.get("start")) is not None
+        ]
+        if not points:
+            return None
+        return _normalize_profile(bin_hourly_means(points, now))
+
+    if not rows:
+        return None, None, None
+    return _profile("mean"), _profile("min"), _profile("max")
+
+
 class PairCoordinator:
     """Tracks two source sensors and derives the pair's difference."""
 
@@ -83,11 +131,21 @@ class PairCoordinator:
         self.band: float = float(entry.data[CONF_BAND])
         self.window: float = float(entry.data.get(CONF_WINDOW, DEFAULT_WINDOW))
         self._model_override: str | None = entry.data.get(CONF_MODEL)
+        self._daily_history: bool = bool(entry.data.get(CONF_DAILY_HISTORY, False))
         self._buffer = RollingBuffer(self.window)
         self._a_buffer = RollingBuffer(self.window)
         self._estimate = Estimate(None, None, STATUS_INSUFFICIENT_DATA)
         self._listeners: list[Callable[[], None]] = []
         self._unsub: Callable[[], None] | None = None
+        # Cached daily-pattern profiles (LOGIC-05); None until primed / when off.
+        # Per-hour mean drives the projection; min/max are captured but unused for
+        # now (#min-max: enables a future amplitude correction without a re-fetch).
+        self._profile_a: list[float | None] | None = None
+        self._profile_b: list[float | None] | None = None
+        self._min_a: list[float | None] | None = None
+        self._max_a: list[float | None] | None = None
+        self._min_b: list[float | None] | None = None
+        self._max_b: list[float | None] | None = None
 
     # --- derived values ---------------------------------------------------
 
@@ -142,6 +200,10 @@ class PairCoordinator:
         live A value when already within the band.
         """
         est = self._estimate
+        # The daily-pattern path supplies the meeting value directly (a far-future
+        # linear projection of A would be meaningless on that horizon).
+        if est.crossover_value is not None:
+            return est.crossover_value
         if est.status == STATUS_WITHIN_BAND:
             return _as_float(self.hass.states.get(self.sensor_a))
         if est.seconds_until is None or est.seconds_until <= 0:
@@ -152,6 +214,133 @@ class PairCoordinator:
         t0 = samples[0][0]
         rebased = [(t - t0, v) for t, v in samples]
         return project_value(rebased, est.seconds_until)
+
+    # --- daily-pattern prediction (LOGIC-05) ------------------------------
+
+    def _compute_estimate(self, now: datetime) -> Estimate:
+        """Build the estimate: daily-pattern when enabled+usable, else base model."""
+        if self._daily_history:
+            daily = self._daily_estimate(now)
+            if daily is not None:
+                return daily
+        return estimate_crossing(self._buffer.samples(), self.band, self.model_id, now)
+
+    def _daily_estimate(self, now: datetime) -> Estimate | None:
+        """Project the higher-variance sensor along its daily profile.
+
+        Returns ``None`` to signal "fall back to the base model" when no profile is
+        usable, a source is unavailable, or the profile cannot be anchored at now.
+        """
+        a = _as_float(self.hass.states.get(self.sensor_a))
+        b = _as_float(self.hass.states.get(self.sensor_b))
+        if a is None or b is None:
+            return None
+
+        # Candidate drivers: (profile, held value, anchor sign, daily range).
+        # sign maps the recent mean difference onto the driver: A ~= B + mean(A-B),
+        # B ~= A - mean(A-B), so the held sensor + sign*mean_diff is the anchor.
+        candidates = []
+        if self._profile_a is not None:
+            ra = profile_range(self._profile_a)
+            candidates.append((self._profile_a, b, 1.0, ra))
+        if self._profile_b is not None:
+            rb = profile_range(self._profile_b)
+            candidates.append((self._profile_b, a, -1.0, rb))
+        if not candidates:
+            return None
+        profile, held, sign, _range = max(candidates, key=lambda c: c[3])
+
+        # Robust anchor (#1): the driver's recent mean, via the difference buffer.
+        samples = self._buffer.samples()
+        mean_diff = sum(v for _, v in samples) / len(samples) if samples else (a - b)
+        anchor = held + sign * mean_diff
+
+        seconds, status = project_daily_crossing(profile, anchor, now, held, self.band)
+        if status == STATUS_INSUFFICIENT_DATA:
+            return None  # profile not anchorable at now -> base model
+        if status == STATUS_WITHIN_BAND:
+            eta: datetime | None = now
+        elif seconds is not None and seconds > 0:
+            eta = now + timedelta(seconds=seconds)
+        else:
+            eta = None
+        # At the crossing the driver enters [held +/- band], so they meet near held.
+        value = held if status in (STATUS_OK, STATUS_WITHIN_BAND) else None
+        return Estimate(
+            seconds_until=seconds, eta=eta, status=status, crossover_value=value
+        )
+
+    async def async_prime_daily_profile(self) -> None:
+        """Fetch and cache both sensors' 24h hourly profiles when the flag is on.
+
+        Prefers HA long-term statistics (hourly mean/min/max); falls back to
+        binning raw recorder history for any sensor without statistics. Best
+        effort: guards on recorder availability and never raises out of setup.
+        """
+        if not self._daily_history:
+            return
+        if "recorder" not in self.hass.config.components:
+            return
+        try:
+            from homeassistant.components.recorder import get_instance, history
+            from homeassistant.components.recorder.statistics import (
+                statistics_during_period,
+            )
+
+            now = dt_util.utcnow()
+            start = now - timedelta(hours=PROFILE_HOURS)
+            instance = get_instance(self.hass)
+            stats = await instance.async_add_executor_job(
+                partial(
+                    statistics_during_period,
+                    self.hass,
+                    start,
+                    now,
+                    {self.sensor_a, self.sensor_b},
+                    "hour",
+                    None,
+                    {"mean", "min", "max"},
+                )
+            )
+            (self._profile_a, self._min_a, self._max_a) = _profiles_from_stats(
+                stats.get(self.sensor_a), now
+            )
+            (self._profile_b, self._min_b, self._max_b) = _profiles_from_stats(
+                stats.get(self.sensor_b), now
+            )
+
+            # Fall back to raw history for any sensor lacking statistics.
+            missing = [
+                s
+                for s, p in (
+                    (self.sensor_a, self._profile_a),
+                    (self.sensor_b, self._profile_b),
+                )
+                if p is None
+            ]
+            if missing:
+                states = await instance.async_add_executor_job(
+                    partial(
+                        history.get_significant_states,
+                        self.hass,
+                        start,
+                        now,
+                        missing,
+                        include_start_time_state=True,
+                        significant_changes_only=False,
+                        no_attributes=True,
+                    )
+                )
+                if self._profile_a is None:
+                    pts_a = _history_points(states.get(self.sensor_a))
+                    self._profile_a = _normalize_profile(bin_hourly_means(pts_a, now))
+                if self._profile_b is None:
+                    pts_b = _history_points(states.get(self.sensor_b))
+                    self._profile_b = _normalize_profile(bin_hourly_means(pts_b, now))
+
+            self._estimate = self._compute_estimate(now)
+        except Exception:  # noqa: BLE001 - daily profile is best-effort, never fatal
+            _LOGGER.debug("Daily profile prime failed for %s", self.name, exc_info=True)
 
     async def async_prime_from_history(self) -> None:
         """Seed the buffer from recorder history so the estimate is ready early.
@@ -222,8 +411,6 @@ class PairCoordinator:
         a = _as_float(self.hass.states.get(self.sensor_a))
         if a is not None:
             self._a_buffer.add(now.timestamp(), a)
-        self._estimate = estimate_crossing(
-            self._buffer.samples(), self.band, self.model_id, now
-        )
+        self._estimate = self._compute_estimate(now)
         for update in list(self._listeners):
             update()

@@ -31,6 +31,8 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from .const import (
+    DAILY_HORIZON_HOURS,
+    DAILY_STEP_SECONDS,
     DEFAULT_WINDOW,
     MAX_SAMPLES,
     MIN_SAMPLES_EXPONENTIAL,
@@ -38,10 +40,12 @@ from .const import (
     MODEL_AUTO,
     MODEL_EXPONENTIAL,
     MODEL_LINEAR,
+    PROFILE_HOURS,
     STATUS_ASYMPTOTE_OUTSIDE_BAND,
     STATUS_DIVERGING,
     STATUS_FIT_FAILED,
     STATUS_INSUFFICIENT_DATA,
+    STATUS_NO_CROSSING_HORIZON,
     STATUS_OK,
     STATUS_WITHIN_BAND,
 )
@@ -60,6 +64,10 @@ class Estimate:
     seconds_until: float | None
     eta: datetime | None
     status: str
+    # Predicted meeting value, set only by the daily-pattern path (LOGIC-05);
+    # left None by the difference models, where the coordinator derives it from a
+    # live projection of sensor A instead.
+    crossover_value: float | None = None
 
 
 class RollingBuffer:
@@ -116,6 +124,119 @@ def merge_difference_series(
         if last_a is not None and last_b is not None:
             out.append((t, last_a - last_b))
     return out
+
+
+# --- daily-pattern projection (LOGIC-05) ------------------------------------
+#
+# A *profile* is a 24-slot list of hourly means indexed by hour-of-day (UTC),
+# ``None`` for hours with no data. The hour-of-day of an epoch timestamp is
+# ``(t % 86400) / 3600`` so these helpers need no datetime/timezone handling and
+# stay pure. ``now`` may be a ``datetime`` or a raw epoch float.
+
+_SECONDS_PER_DAY = 86400.0
+
+
+def _epoch(now: datetime | float) -> float:
+    """Epoch seconds from a datetime or a raw float."""
+    return now.timestamp() if isinstance(now, datetime) else float(now)
+
+
+def bin_hourly_means(
+    samples: Sequence[Sample], now: datetime | float
+) -> list[float | None]:
+    """Bin ``(epoch, value)`` samples of the last 24h into hourly means.
+
+    Returns a 24-slot list indexed by hour-of-day (UTC); a slot is ``None`` when
+    no sample fell in that hour. Samples older than ``PROFILE_HOURS`` hours before
+    ``now`` are ignored.
+    """
+    cutoff = _epoch(now) - PROFILE_HOURS * 3600
+    sums = [0.0] * PROFILE_HOURS
+    counts = [0] * PROFILE_HOURS
+    for t, v in samples:
+        if t < cutoff:
+            continue
+        hour = int((t % _SECONDS_PER_DAY) // 3600) % PROFILE_HOURS
+        sums[hour] += v
+        counts[hour] += 1
+    return [sums[h] / counts[h] if counts[h] else None for h in range(PROFILE_HOURS)]
+
+
+def profile_at(profile: Sequence[float | None], hour_float: float) -> float | None:
+    """Linear interpolation of a profile at a fractional hour-of-day (wraps 23->0).
+
+    Returns ``None`` only when both surrounding hourly slots are empty; when just
+    one is known that value is used (a gap-tolerant nearest fallback).
+    """
+    base = math.floor(hour_float)
+    frac = hour_float - base
+    lo = profile[base % PROFILE_HOURS]
+    hi = profile[(base + 1) % PROFILE_HOURS]
+    if lo is None and hi is None:
+        return None
+    if lo is None:
+        return hi
+    if hi is None:
+        return lo
+    return lo + (hi - lo) * frac
+
+
+def profile_range(profile: Sequence[float | None]) -> float:
+    """Peak-to-peak span of the known slots (0.0 when none are known).
+
+    Used to pick the driver: the sensor with the larger daily swing is projected.
+    """
+    known = [v for v in profile if v is not None]
+    if not known:
+        return 0.0
+    return max(known) - min(known)
+
+
+def project_daily_crossing(
+    profile: Sequence[float | None],
+    anchor: float,
+    now: datetime | float,
+    held: float,
+    band: float,
+) -> tuple[float | None, str]:
+    """Project the shifted daily curve forward to the first band entry.
+
+    The profile is shifted additively so it passes through ``anchor`` at ``now``
+    (``shift = anchor - profile_at(now)``), then stepped forward up to a 24h
+    horizon. Returns ``(seconds_until, status)`` for the first time the shifted
+    curve enters ``[held - band, held + band]`` (interpolated to the band edge),
+    ``(0.0, within_band)`` if it starts inside, ``(None, no_crossing_horizon)`` if
+    it never enters within 24h, and ``(None, insufficient_data)`` when the profile
+    cannot be anchored at ``now``.
+    """
+    now_epoch = _epoch(now)
+    base_now = profile_at(profile, (now_epoch % _SECONDS_PER_DAY) / 3600)
+    if base_now is None:
+        return None, STATUS_INSUFFICIENT_DATA
+    shift = anchor - base_now
+
+    lo_edge, hi_edge = held - band, held + band
+    if lo_edge <= anchor <= hi_edge:
+        return 0.0, STATUS_WITHIN_BAND
+
+    v_prev, s_prev = anchor, 0.0
+    horizon = DAILY_HORIZON_HOURS * 3600
+    s = DAILY_STEP_SECONDS
+    while s <= horizon:
+        hour = ((now_epoch + s) % _SECONDS_PER_DAY) / 3600
+        slot = profile_at(profile, hour)
+        if slot is None:
+            s += DAILY_STEP_SECONDS
+            continue
+        v = slot + shift
+        # Near edge relative to where the curve currently sits (outside the band).
+        near = hi_edge if v_prev > hi_edge else lo_edge
+        if (v_prev - near) * (v - near) <= 0:  # curve reached/crossed the near edge
+            frac = (near - v_prev) / (v - v_prev) if v != v_prev else 0.0
+            return s_prev + frac * (s - s_prev), STATUS_OK
+        v_prev, s_prev = v, s
+        s += DAILY_STEP_SECONDS
+    return None, STATUS_NO_CROSSING_HORIZON
 
 
 def _near_edge(v_now: float, band: float) -> float:

@@ -14,6 +14,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
@@ -26,6 +27,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_BAND,
+    CONF_DAILY_HISTORY,
     CONF_MODEL,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
@@ -40,8 +42,10 @@ from .const import (
 from .kinds import resolve
 
 
-def _model_window_fields(model_default: str, window_default: float) -> dict:
-    """Schema entries for the per-pair model override + fit window."""
+def _model_window_fields(
+    model_default: str, window_default: float, daily_default: bool = False
+) -> dict:
+    """Schema entries for the per-pair model override, fit window + daily flag."""
     return {
         vol.Required(CONF_MODEL, default=model_default): SelectSelector(
             SelectSelectorConfig(
@@ -58,6 +62,9 @@ def _model_window_fields(model_default: str, window_default: float) -> dict:
                 unit_of_measurement="s",
             )
         ),
+        vol.Required(
+            CONF_DAILY_HISTORY, default=daily_default
+        ): BooleanSelector(),
     }
 
 
@@ -129,6 +136,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_BAND: user_input[CONF_BAND],
                         CONF_MODEL: user_input[CONF_MODEL],
                         CONF_WINDOW: user_input[CONF_WINDOW],
+                        CONF_DAILY_HISTORY: user_input[CONF_DAILY_HISTORY],
                     },
                 )
 
@@ -187,6 +195,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                 **_model_window_fields(
                     current.get(CONF_MODEL, MODEL_AUTO),
                     current.get(CONF_WINDOW, DEFAULT_WINDOW),
+                    current.get(CONF_DAILY_HISTORY, False),
                 ),
             }
         )

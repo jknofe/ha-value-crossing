@@ -9,6 +9,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.value_crossing.const import (
     CONF_BAND,
+    CONF_DAILY_HISTORY,
     CONF_MODEL,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
@@ -59,9 +60,27 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     assert data[CONF_SENSOR_A] == "sensor.inside"
     assert data[CONF_SENSOR_B] == "sensor.outside"
     assert data[CONF_BAND] == 0.5
-    # Model/window default in when not supplied.
+    # Model/window/daily-history default in when not supplied.
     assert data[CONF_MODEL] == MODEL_AUTO
     assert data[CONF_WINDOW] == DEFAULT_WINDOW
+    assert data[CONF_DAILY_HISTORY] is False
+
+
+async def test_daily_history_flag_persisted(hass: HomeAssistant) -> None:
+    _set(hass, "sensor.inside", "20", "°C", "temperature")
+    _set(hass, "sensor.outside", "18", "°C", "temperature")
+
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_PAIR_NAME: "p", CONF_SENSOR_A: "sensor.inside"},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_SENSOR_B: "sensor.outside", CONF_BAND: 0.5, CONF_DAILY_HISTORY: True},
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_DAILY_HISTORY] is True
 
 
 async def test_sensor_b_filtered_by_device_class_and_band_default(

@@ -20,13 +20,15 @@
           "sensor_b": "Sensor B",
           "band": "Band",
           "model": "Estimation model",
-          "window": "Fit window (seconds)"
+          "window": "Fit window (seconds)",
+          "daily_history": "Use last-day history pattern"
         },
         "data_description": {
           "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
           "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value.",
           "model": "How the crossing time is estimated. Auto picks a model from the sensor type.",
-          "window": "How much recent history feeds the estimate."
+          "window": "How much recent history feeds the estimate.",
+          "daily_history": "Project the more dynamic sensor along its own shape from the last 24 hours instead of a short straight-line trend. Best for daily-cyclic signals like temperature."
         }
       },
       "reconfigure": {
@@ -38,7 +40,8 @@
           "sensor_b": "Sensor B",
           "band": "Band",
           "model": "Estimation model",
-          "window": "Fit window (seconds)"
+          "window": "Fit window (seconds)",
+          "daily_history": "Use last-day history pattern"
         },
         "data_description": {
           "name": "Friendly name for this pair.",
@@ -46,7 +49,8 @@
           "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
           "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value.",
           "model": "How the crossing time is estimated. Auto picks a model from the sensor type.",
-          "window": "How much recent history feeds the estimate."
+          "window": "How much recent history feeds the estimate.",
+          "daily_history": "Project the more dynamic sensor along its own shape from the last 24 hours instead of a short straight-line trend. Best for daily-cyclic signals like temperature."
         }
       }
     },

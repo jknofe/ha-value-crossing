@@ -12,11 +12,13 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.value_crossing.const import (
     CONF_BAND,
+    CONF_DAILY_HISTORY,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
     DOMAIN,
     STATUS_INSUFFICIENT_DATA,
+    STATUS_WITHIN_BAND,
 )
 
 
@@ -26,7 +28,7 @@ def _set(hass, entity_id, value, unit="°C", device_class="temperature"):
     )
 
 
-def _entry(hass) -> MockConfigEntry:
+def _entry(hass, **extra) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Pair",
@@ -35,6 +37,7 @@ def _entry(hass) -> MockConfigEntry:
             CONF_SENSOR_A: "sensor.a",
             CONF_SENSOR_B: "sensor.b",
             CONF_BAND: 0.5,
+            **extra,
         },
     )
     entry.add_to_hass(hass)
@@ -148,6 +151,112 @@ async def test_backfill_absent_recorder_stays_insufficient(
     state = hass.states.get(eta.entity_id)
     assert state.state == "unknown"
     assert state.attributes["status"] == STATUS_INSUFFICIENT_DATA
+
+
+def _flat_stats(now, value):
+    """24 hourly stat rows of a constant mean: a flat, always-anchorable profile."""
+    return [
+        {"start": now - timedelta(hours=k), "mean": value, "min": value - 1,
+         "max": value + 1}
+        for k in range(24)
+    ]
+
+
+async def test_daily_history_drives_estimate(hass: HomeAssistant) -> None:
+    # A and B sit within the band; with the daily flag on, the crossover value is
+    # the held (B) value. The base-model path would instead report live A, so the
+    # value 20.1 (B) rather than 20.0 (A) proves the daily path produced it.
+    _set(hass, "sensor.a", "20.0")
+    _set(hass, "sensor.b", "20.1")
+    hass.config.components.add("recorder")
+    entry = _entry(hass, **{CONF_DAILY_HISTORY: True})
+
+    now = dt_util.utcnow()
+    stats = {"sensor.a": _flat_stats(now, 19.0), "sensor.b": _flat_stats(now, 18.0)}
+    with (
+        patch(
+            "homeassistant.components.recorder.get_instance",
+            return_value=_FakeRecorder(),
+        ),
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={},
+        ),
+        patch(
+            "homeassistant.components.recorder.statistics.statistics_during_period",
+            return_value=stats,
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    value = _by_suffix(entities, "_crossover_value")
+    vstate = hass.states.get(value.entity_id)
+    assert vstate.attributes["status"] == STATUS_WITHIN_BAND
+    assert float(vstate.state) == 20.1  # held (B), not live A (20.0)
+
+
+async def test_daily_history_unavailable_falls_back(hass: HomeAssistant) -> None:
+    # Flag on but neither statistics nor history -> no profile -> base model, no
+    # crash. With empty buffers the base model reports insufficient_data.
+    _set(hass, "sensor.a", "20")
+    _set(hass, "sensor.b", "14")
+    hass.config.components.add("recorder")
+    entry = _entry(hass, **{CONF_DAILY_HISTORY: True})
+
+    with (
+        patch(
+            "homeassistant.components.recorder.get_instance",
+            return_value=_FakeRecorder(),
+        ),
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={},
+        ),
+        patch(
+            "homeassistant.components.recorder.statistics.statistics_during_period",
+            return_value={},
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    eta = _by_suffix(entities, "_crossover_eta")
+    state = hass.states.get(eta.entity_id)
+    assert state.state == "unknown"
+    assert state.attributes["status"] == STATUS_INSUFFICIENT_DATA
+
+
+async def test_daily_driver_is_higher_range_regardless_of_order(
+    hass: HomeAssistant,
+) -> None:
+    # The sensor with the larger daily range drives; the other is held. Which one
+    # is labelled A vs B must not change the outcome. crossover_value == held, so
+    # it reveals the driver: held is B (20.1) when A drives, A (20.0) when B drives.
+    from custom_components.value_crossing.coordinator import PairCoordinator
+
+    ramp = [float(h) for h in range(24)]  # range 23 -> dynamic
+    flat = [5.0] * 24  # range 0 -> steady
+
+    def _coord(profile_a, profile_b) -> PairCoordinator:
+        _set(hass, "sensor.a", "20.0")
+        _set(hass, "sensor.b", "20.1")
+        coord = PairCoordinator(hass, _entry(hass, **{CONF_DAILY_HISTORY: True}))
+        coord._profile_a = profile_a
+        coord._profile_b = profile_b
+        return coord
+
+    now = dt_util.utcnow()
+    # A is the dynamic one -> A drives -> held is B.
+    est = _coord(ramp, flat)._daily_estimate(now)
+    assert est is not None and est.crossover_value == 20.1
+    # Swap the shapes -> B drives -> held is A. Same geometry, order-independent.
+    est = _coord(flat, ramp)._daily_estimate(now)
+    assert est is not None and est.crossover_value == 20.0
 
 
 async def test_difference_and_crossed_update_live(hass: HomeAssistant) -> None:

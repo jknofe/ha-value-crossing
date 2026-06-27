@@ -2,8 +2,9 @@
 
 Each config entry is one crossing pair (two sensors of the same unit). It exposes
 the signed difference, a "crossed" binary sensor, and two estimate sensors
-(time-until-crossover and ETA). On setup the estimate buffer is primed from
-recorder history so the estimate is available shortly after a restart.
+(predicted crossover value and ETA). On setup the estimate buffer is primed from
+recorder history so the estimate is available shortly after a restart; with the
+daily-history flag on, a 24h hourly profile is also primed for the projection.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ async def async_setup_entry(
     coordinator = PairCoordinator(hass, entry)
     entry.runtime_data = coordinator
     await coordinator.async_prime_from_history()
+    await coordinator.async_prime_daily_profile()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True

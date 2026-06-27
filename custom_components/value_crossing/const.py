@@ -13,6 +13,7 @@ CONF_SENSOR_A = "sensor_a"
 CONF_SENSOR_B = "sensor_b"
 CONF_BAND = "band"
 CONF_MODEL = "model"  # estimation-model override; surfaced by LOGIC-01/02
+CONF_DAILY_HISTORY = "daily_history"  # opt-in daily-pattern prediction (LOGIC-05)
 
 # Entity translation keys (also used to build unique-id suffixes).
 KEY_DIFFERENCE = "difference"
@@ -39,6 +40,11 @@ MAX_SAMPLES = 600  # hard cap on the rolling buffer
 MIN_SAMPLES_LINEAR = 2
 MIN_SAMPLES_EXPONENTIAL = 5
 
+# Daily-pattern prediction (LOGIC-05).
+PROFILE_HOURS = 24  # hourly-mean buckets in a daily profile
+DAILY_HORIZON_HOURS = 24  # how far ahead the daily projection steps
+DAILY_STEP_SECONDS = 600  # projection step granularity (10 minutes)
+
 # Estimate status (exposed as the time/ETA sensors' `status` attribute).
 STATUS_OK = "ok"  # a future crossing is predicted
 STATUS_WITHIN_BAND = "within_band"  # already crossed (time 0 / ETA now)
@@ -46,3 +52,4 @@ STATUS_DIVERGING = "diverging"  # trend moves away from / never reaches the band
 STATUS_ASYMPTOTE_OUTSIDE_BAND = "asymptote_outside_band"  # exp asymptote outside band
 STATUS_INSUFFICIENT_DATA = "insufficient_data"  # not enough samples yet
 STATUS_FIT_FAILED = "fit_failed"  # degenerate/ill-conditioned fit
+STATUS_NO_CROSSING_HORIZON = "no_crossing_horizon"  # daily curve never crosses in 24h
