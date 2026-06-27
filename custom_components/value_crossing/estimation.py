@@ -88,6 +88,36 @@ class RollingBuffer:
         return list(self._samples)
 
 
+def merge_difference_series(
+    a_points: Sequence[Sample], b_points: Sequence[Sample]
+) -> list[Sample]:
+    """Forward-fill union merge of two ``(t, value)`` series into ``(t, a - b)``.
+
+    At every timestamp where either series has a point, emit a difference sample
+    from the most recent value of each side. Nothing is emitted until both sides
+    have a known value, so the result mirrors what the live per-change path would
+    have accumulated. Output is oldest-first, one sample per distinct timestamp.
+    """
+    events: dict[float, list[tuple[str, float]]] = {}
+    for t, v in a_points:
+        events.setdefault(t, []).append(("a", v))
+    for t, v in b_points:
+        events.setdefault(t, []).append(("b", v))
+
+    last_a: float | None = None
+    last_b: float | None = None
+    out: list[Sample] = []
+    for t in sorted(events):
+        for side, v in events[t]:
+            if side == "a":
+                last_a = v
+            else:
+                last_b = v
+        if last_a is not None and last_b is not None:
+            out.append((t, last_a - last_b))
+    return out
+
+
 def _near_edge(v_now: float, band: float) -> float:
     """The band boundary the difference would reach first from outside."""
     return band if v_now > 0 else -band
