@@ -1,0 +1,11 @@
+{
+  "domain": "value_crossing",
+  "name": "Value Crossing",
+  "codeowners": ["@jknofe"],
+  "config_flow": true,
+  "documentation": "https://github.com/jknofe/ha-value-crossing",
+  "integration_type": "device",
+  "iot_class": "calculated",
+  "quality_scale": "bronze",
+  "version": "0.1.0"
+}
