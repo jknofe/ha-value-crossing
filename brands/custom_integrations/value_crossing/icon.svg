@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Value Crossing: two temperature-like traces crossing once on the left,
+       red dot on the intersection. blue = an outside-temp arc, green = a
+       gentler indoor drift. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="22">
+    <!-- blue: rises from cool, peaks midday, falls -->
+    <path d="M36,372 C96,348 122,300 148,250 C206,150 300,116 360,134 C426,152 456,250 484,306" stroke="#3B82F6"/>
+    <!-- green: gentle, slowly drifting trace -->
+    <path d="M36,238 C92,236 120,246 148,250 C250,260 372,300 484,356" stroke="#10B981"/>
+  </g>
+  <!-- soft halo to draw the eye to the crossing -->
+  <circle cx="148" cy="250" r="44" fill="#EF4444" fill-opacity="0.18"/>
+  <!-- crossing point -->
+  <circle cx="148" cy="250" r="26" fill="#FFFFFF"/>
+  <circle cx="148" cy="250" r="19" fill="#EF4444"/>
+</svg>
