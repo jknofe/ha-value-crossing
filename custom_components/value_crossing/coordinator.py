@@ -9,7 +9,10 @@ last, so it is tied to entity lifecycle and never leaks.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
+from datetime import timedelta
+from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
@@ -32,8 +35,11 @@ from .estimation import (
     RollingBuffer,
     effective_model,
     estimate_crossing,
+    merge_difference_series,
 )
 from .kinds import resolve
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _as_float(state) -> float | None:
@@ -44,6 +50,22 @@ def _as_float(state) -> float | None:
         return float(state.state)
     except (TypeError, ValueError):
         return None
+
+
+def _history_points(states) -> list[tuple[float, float]]:
+    """Recorder states for one sensor -> ``(epoch, value)``, skipping non-numeric."""
+    points: list[tuple[float, float]] = []
+    for state in states or []:
+        value = _as_float(state)
+        if value is None:
+            continue
+        stamp = getattr(state, "last_changed", None) or getattr(
+            state, "last_updated", None
+        )
+        if stamp is None:
+            continue
+        points.append((stamp.timestamp(), value))
+    return points
 
 
 class PairCoordinator:
@@ -106,6 +128,43 @@ class PairCoordinator:
     def estimate(self) -> Estimate:
         """Latest crossing estimate (recomputed on every source change)."""
         return self._estimate
+
+    async def async_prime_from_history(self) -> None:
+        """Seed the buffer from recorder history so the estimate is ready early.
+
+        Without this the in-memory buffer is empty after every restart and the
+        estimate reports ``insufficient_data`` until enough live updates arrive.
+        Degrades silently to the cold-start path if the recorder is unavailable
+        or has too little history; never raises out of entry setup.
+        """
+        if "recorder" not in self.hass.config.components:
+            return
+        try:
+            from homeassistant.components.recorder import get_instance, history
+
+            now = dt_util.utcnow()
+            start = now - timedelta(seconds=self.window)
+            states = await get_instance(self.hass).async_add_executor_job(
+                partial(
+                    history.get_significant_states,
+                    self.hass,
+                    start,
+                    None,
+                    [self.sensor_a, self.sensor_b],
+                    include_start_time_state=True,
+                    significant_changes_only=False,
+                    no_attributes=True,
+                )
+            )
+            a_points = _history_points(states.get(self.sensor_a))
+            b_points = _history_points(states.get(self.sensor_b))
+            for t, diff in merge_difference_series(a_points, b_points):
+                self._buffer.add(t, diff)
+            self._estimate = estimate_crossing(
+                self._buffer.samples(), self.band, self.model_id, now
+            )
+        except Exception:  # noqa: BLE001 - backfill is best-effort, never fatal
+            _LOGGER.debug("History backfill failed for %s", self.name, exc_info=True)
 
     # --- listener plumbing ------------------------------------------------
 

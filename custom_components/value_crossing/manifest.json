@@ -1,6 +1,7 @@
 {
   "domain": "value_crossing",
   "name": "Value Crossing",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@jknofe"],
   "config_flow": true,
   "documentation": "https://github.com/jknofe/ha-value-crossing",

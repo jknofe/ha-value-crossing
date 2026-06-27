@@ -1,8 +1,9 @@
 """The value_crossing integration.
 
-A Home Assistant *helper*: each config entry is one crossing pair (two sensors of
-the same unit). It exposes the signed difference, a "crossed" binary sensor, and
-two placeholder time sensors (filled in by LOGIC-01/02).
+Each config entry is one crossing pair (two sensors of the same unit). It exposes
+the signed difference, a "crossed" binary sensor, and two estimate sensors
+(time-until-crossover and ETA). On setup the estimate buffer is primed from
+recorder history so the estimate is available shortly after a restart.
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ValueCrossingConfigEntry
 ) -> bool:
     """Set up a crossing pair from a config entry."""
-    entry.runtime_data = PairCoordinator(hass, entry)
+    coordinator = PairCoordinator(hass, entry)
+    entry.runtime_data = coordinator
+    await coordinator.async_prime_from_history()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
