@@ -14,14 +14,26 @@ from collections.abc import Callable
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BAND,
+    CONF_MODEL,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
+    CONF_WINDOW,
+    DEFAULT_WINDOW,
     INHERITABLE_DEVICE_CLASSES,
+    STATUS_INSUFFICIENT_DATA,
 )
+from .estimation import (
+    Estimate,
+    RollingBuffer,
+    effective_model,
+    estimate_crossing,
+)
+from .kinds import resolve
 
 
 def _as_float(state) -> float | None:
@@ -45,6 +57,10 @@ class PairCoordinator:
         self.sensor_a: str = entry.data[CONF_SENSOR_A]
         self.sensor_b: str = entry.data[CONF_SENSOR_B]
         self.band: float = float(entry.data[CONF_BAND])
+        self.window: float = float(entry.data.get(CONF_WINDOW, DEFAULT_WINDOW))
+        self._model_override: str | None = entry.data.get(CONF_MODEL)
+        self._buffer = RollingBuffer(self.window)
+        self._estimate = Estimate(None, None, STATUS_INSUFFICIENT_DATA)
         self._listeners: list[Callable[[], None]] = []
         self._unsub: Callable[[], None] | None = None
 
@@ -78,6 +94,19 @@ class PairCoordinator:
         dc = state.attributes.get("device_class") if state else None
         return dc if dc in INHERITABLE_DEVICE_CLASSES else None
 
+    # --- estimation -------------------------------------------------------
+
+    @property
+    def model_id(self) -> str:
+        """Effective estimation model: per-pair override, else the kind default."""
+        kind = resolve(self.source_unit, self.source_device_class)
+        return effective_model(self._model_override, kind)
+
+    @property
+    def estimate(self) -> Estimate:
+        """Latest crossing estimate (recomputed on every source change)."""
+        return self._estimate
+
     # --- listener plumbing ------------------------------------------------
 
     @callback
@@ -100,6 +129,13 @@ class PairCoordinator:
 
     @callback
     def _handle_change(self, _event: Event[EventStateChangedData]) -> None:
-        """Notify every listening entity that a source changed."""
+        """Append the new difference, re-estimate, and notify entities."""
+        now = dt_util.utcnow()
+        diff = self.difference()
+        if diff is not None:
+            self._buffer.add(now.timestamp(), diff)
+        self._estimate = estimate_crossing(
+            self._buffer.samples(), self.band, self.model_id, now
+        )
         for update in list(self._listeners):
             update()

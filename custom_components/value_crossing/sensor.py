@@ -66,7 +66,7 @@ class DifferenceSensor(ValueCrossingEntity, SensorEntity):
 
 
 class TimeUntilCrossoverSensor(ValueCrossingEntity, SensorEntity):
-    """Seconds until the pair crosses (placeholder until LOGIC-01)."""
+    """Seconds until the pair crosses, from the estimation model (LOGIC-01)."""
 
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
@@ -77,12 +77,17 @@ class TimeUntilCrossoverSensor(ValueCrossingEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Unknown until estimation lands (LOGIC-01)."""
-        return None
+        """Seconds until crossing, or None when no crossing is predicted."""
+        return self.coordinator.estimate.seconds_until
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Surface why there is (or isn't) a crossing estimate."""
+        return {"status": self.coordinator.estimate.status}
 
 
 class CrossoverEtaSensor(ValueCrossingEntity, SensorEntity):
-    """Wall-clock ETA of the crossing (placeholder until LOGIC-01)."""
+    """Wall-clock ETA of the crossing, from the estimation model (LOGIC-01)."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
@@ -92,5 +97,10 @@ class CrossoverEtaSensor(ValueCrossingEntity, SensorEntity):
 
     @property
     def native_value(self) -> datetime | None:
-        """Unknown until estimation lands (LOGIC-01)."""
-        return None
+        """Predicted crossing time, or None when no crossing is predicted."""
+        return self.coordinator.estimate.eta
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Surface why there is (or isn't) a crossing estimate."""
+        return {"status": self.coordinator.estimate.status}
