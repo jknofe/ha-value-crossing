@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a value-crossing pair",
+        "description": "Name this pair and pick the first sensor.",
+        "data": {
+          "name": "Name",
+          "sensor_a": "Sensor A"
+        },
+        "data_description": {
+          "name": "Friendly name for this pair; used as the prefix for its entities.",
+          "sensor_a": "The first sensor to track."
+        }
+      },
+      "sensor_b": {
+        "title": "Second sensor and band",
+        "description": "Pick the second sensor (same unit as Sensor A) and the band.",
+        "data": {
+          "sensor_b": "Sensor B",
+          "band": "Band"
+        },
+        "data_description": {
+          "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
+          "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value."
+        }
+      },
+      "reconfigure": {
+        "title": "Edit value-crossing pair",
+        "description": "Change the sensors or the band for this pair. Both sensors must share a unit.",
+        "data": {
+          "name": "Name",
+          "sensor_a": "Sensor A",
+          "sensor_b": "Sensor B",
+          "band": "Band"
+        },
+        "data_description": {
+          "name": "Friendly name for this pair.",
+          "sensor_a": "The first sensor to track.",
+          "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
+          "band": "Half-width of the equality band, in the sensors' unit. The pair counts as crossed when the absolute difference is at or below this value."
+        }
+      }
+    },
+    "error": {
+      "unit_mismatch": "The two sensors must have the same unit of measurement."
+    },
+    "abort": {
+      "reconfigure_successful": "Pair updated."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "difference": { "name": "Difference" },
+      "time_until_crossover": { "name": "Time until crossover" },
+      "crossover_eta": { "name": "Crossover ETA" }
+    },
+    "binary_sensor": {
+      "crossed": { "name": "Crossed" }
+    }
+  }
+}
