@@ -9,10 +9,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.value_crossing.const import (
     CONF_BAND,
+    CONF_MODEL,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
+    CONF_WINDOW,
+    DEFAULT_WINDOW,
     DOMAIN,
+    MODEL_AUTO,
 )
 
 
@@ -50,12 +54,14 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["title"] == "Indoor vs Outdoor"
-    assert result["data"] == {
-        CONF_PAIR_NAME: "Indoor vs Outdoor",
-        CONF_SENSOR_A: "sensor.inside",
-        CONF_SENSOR_B: "sensor.outside",
-        CONF_BAND: 0.5,
-    }
+    data = result["data"]
+    assert data[CONF_PAIR_NAME] == "Indoor vs Outdoor"
+    assert data[CONF_SENSOR_A] == "sensor.inside"
+    assert data[CONF_SENSOR_B] == "sensor.outside"
+    assert data[CONF_BAND] == 0.5
+    # Model/window default in when not supplied.
+    assert data[CONF_MODEL] == MODEL_AUTO
+    assert data[CONF_WINDOW] == DEFAULT_WINDOW
 
 
 async def test_sensor_b_filtered_by_device_class_and_band_default(
