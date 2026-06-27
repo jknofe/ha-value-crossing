@@ -1,0 +1,31 @@
+# Agent working memory — separate repo, never committed to the project repo
+.ai/
+
+# Local Claude settings (machine-specific)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+/build/
+/dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets / keys — never commit (this repo is public)
+*.key
+ha.key*
+*.pem
+*.p12
+secrets.yaml
+.env
+
+# OS / editor
+.DS_Store
