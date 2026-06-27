@@ -16,8 +16,8 @@ CONF_MODEL = "model"  # estimation-model override; surfaced by LOGIC-01/02
 
 # Entity translation keys (also used to build unique-id suffixes).
 KEY_DIFFERENCE = "difference"
-KEY_TIME_UNTIL = "time_until_crossover"
 KEY_ETA = "crossover_eta"
+KEY_CROSSOVER_VALUE = "crossover_value"
 KEY_CROSSED = "crossed"
 
 # Device-class strings whose measurement makes sense to inherit onto the

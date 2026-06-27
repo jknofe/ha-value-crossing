@@ -17,12 +17,12 @@ outside temperature?" or "when will production match consumption?".
 | Entity | What it shows | Unit |
 | --- | --- | --- |
 | Difference | Live signed `A - B` | the sensors' unit |
-| Time until crossover | Estimated time until crossing | minutes (duration) |
+| Crossover value | Predicted value the sensors meet at | the sensors' unit |
 | Crossover ETA | Estimated wall-clock time of crossing | timestamp |
 | Crossed | On while the difference is within the band | binary |
 
-The two time estimates report `unknown` when no crossing is predicted; their
-`status` attribute explains why (for example `diverging`,
+The crossover value and ETA report `unknown` when no crossing is predicted;
+their `status` attribute explains why (for example `diverging`,
 `asymptote_outside_band`, or `insufficient_data`).
 
 ## Install

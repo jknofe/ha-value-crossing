@@ -22,10 +22,30 @@ from custom_components.value_crossing.estimation import (
     estimate_crossing,
     get_model,
     merge_difference_series,
+    project_value,
 )
 from custom_components.value_crossing.kinds import GenericKind, TemperatureKind
 
 NOW = datetime(2026, 6, 27, 12, 0, 0, tzinfo=UTC)
+
+
+# --- crossover-value projection ---------------------------------------------
+
+
+def test_project_value_extrapolates_linear_trend() -> None:
+    # Rising 1 unit / 10 s; 30 s past the last sample -> +3.
+    samples = [(0.0, 10.0), (10.0, 11.0), (20.0, 12.0)]
+    assert project_value(samples, 30.0) == 12.0 + 3.0
+
+
+def test_project_value_flat_series_holds() -> None:
+    samples = [(0.0, 20.0), (10.0, 20.0), (20.0, 20.0)]
+    assert project_value(samples, 600.0) == 20.0
+
+
+def test_project_value_insufficient_samples_is_none() -> None:
+    assert project_value([(0.0, 5.0)], 60.0) is None
+    assert project_value([], 60.0) is None
 
 
 # --- dispatch + override ----------------------------------------------------

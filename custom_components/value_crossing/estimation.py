@@ -149,6 +149,28 @@ def _linear(samples: Sequence[Sample], band: float) -> tuple[float | None, str]:
     return seconds, STATUS_OK
 
 
+def project_value(samples: Sequence[Sample], seconds: float) -> float | None:
+    """Linear least-squares projection of a value series ``seconds`` ahead.
+
+    Used to estimate the absolute value a sensor holds at the predicted crossing
+    time (the "crossover value"). Returns ``None`` with fewer than two samples or
+    a singular (vertical-time) fit.
+    """
+    n = len(samples)
+    if n < MIN_SAMPLES_LINEAR:
+        return None
+    sx = sum(t for t, _ in samples)
+    sy = sum(v for _, v in samples)
+    sxx = sum(t * t for t, _ in samples)
+    sxy = sum(t * v for t, v in samples)
+    denom = n * sxx - sx * sx
+    if denom == 0:
+        return None
+    slope = (n * sxy - sx * sy) / denom
+    intercept = (sy - slope * sx) / n
+    return slope * (samples[-1][0] + seconds) + intercept
+
+
 def fit_exponential(samples: Sequence[Sample]) -> tuple[float, float, float] | None:
     """Fit ``diff(t) = d_inf + amp * exp(-(t - t0) / tau)`` (tau > 0).
 

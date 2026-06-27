@@ -29,6 +29,7 @@ from .const import (
     DEFAULT_WINDOW,
     INHERITABLE_DEVICE_CLASSES,
     STATUS_INSUFFICIENT_DATA,
+    STATUS_WITHIN_BAND,
 )
 from .estimation import (
     Estimate,
@@ -36,6 +37,7 @@ from .estimation import (
     effective_model,
     estimate_crossing,
     merge_difference_series,
+    project_value,
 )
 from .kinds import resolve
 
@@ -82,6 +84,7 @@ class PairCoordinator:
         self.window: float = float(entry.data.get(CONF_WINDOW, DEFAULT_WINDOW))
         self._model_override: str | None = entry.data.get(CONF_MODEL)
         self._buffer = RollingBuffer(self.window)
+        self._a_buffer = RollingBuffer(self.window)
         self._estimate = Estimate(None, None, STATUS_INSUFFICIENT_DATA)
         self._listeners: list[Callable[[], None]] = []
         self._unsub: Callable[[], None] | None = None
@@ -129,6 +132,27 @@ class PairCoordinator:
         """Latest crossing estimate (recomputed on every source change)."""
         return self._estimate
 
+    @property
+    def predicted_crossover_value(self) -> float | None:
+        """Value sensor A is projected to hold when the pair crosses.
+
+        Linear projection of sensor A's recent trend to the predicted crossing
+        time; at the crossing A and B are within the band, so this is the common
+        value where they meet. ``None`` when no crossing is predicted, and the
+        live A value when already within the band.
+        """
+        est = self._estimate
+        if est.status == STATUS_WITHIN_BAND:
+            return _as_float(self.hass.states.get(self.sensor_a))
+        if est.seconds_until is None or est.seconds_until <= 0:
+            return None
+        samples = self._a_buffer.samples()
+        if not samples:
+            return None
+        t0 = samples[0][0]
+        rebased = [(t - t0, v) for t, v in samples]
+        return project_value(rebased, est.seconds_until)
+
     async def async_prime_from_history(self) -> None:
         """Seed the buffer from recorder history so the estimate is ready early.
 
@@ -160,6 +184,8 @@ class PairCoordinator:
             b_points = _history_points(states.get(self.sensor_b))
             for t, diff in merge_difference_series(a_points, b_points):
                 self._buffer.add(t, diff)
+            for t, value in a_points:
+                self._a_buffer.add(t, value)
             self._estimate = estimate_crossing(
                 self._buffer.samples(), self.band, self.model_id, now
             )
@@ -193,6 +219,9 @@ class PairCoordinator:
         diff = self.difference()
         if diff is not None:
             self._buffer.add(now.timestamp(), diff)
+        a = _as_float(self.hass.states.get(self.sensor_a))
+        if a is not None:
+            self._a_buffer.add(now.timestamp(), a)
         self._estimate = estimate_crossing(
             self._buffer.samples(), self.band, self.model_id, now
         )

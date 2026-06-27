@@ -63,11 +63,11 @@ async def test_setup_creates_four_entities(hass: HomeAssistant) -> None:
     crossed = _by_suffix(entities, "_crossed")
     assert hass.states.get(crossed.entity_id).state == "off"
 
-    # Placeholders are unknown this change.
+    # No crossing predicted yet -> ETA and crossover value unknown.
     eta = _by_suffix(entities, "_crossover_eta")
     assert hass.states.get(eta.entity_id).state == "unknown"
-    until = _by_suffix(entities, "_time_until_crossover")
-    assert hass.states.get(until.entity_id).state == "unknown"
+    value = _by_suffix(entities, "_crossover_value")
+    assert hass.states.get(value.entity_id).state == "unknown"
 
 
 class _FakeRecorder:
@@ -117,11 +117,18 @@ async def test_backfill_primes_estimate_from_history(hass: HomeAssistant) -> Non
 
     ent_reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    until = _by_suffix(entities, "_time_until_crossover")
-    state = hass.states.get(until.entity_id)
+    eta = _by_suffix(entities, "_crossover_eta")
+    state = hass.states.get(eta.entity_id)
     # Estimate is populated at first render, without any new live update.
     assert state.state != "unknown"
     assert state.attributes["status"] != STATUS_INSUFFICIENT_DATA
+
+    # The crossover value is also projected from the primed A history.
+    # Sensor A is constant 20 across the history, so it projects to ~20.
+    value = _by_suffix(entities, "_crossover_value")
+    vstate = hass.states.get(value.entity_id)
+    assert vstate.state != "unknown"
+    assert abs(float(vstate.state) - 20.0) < 0.5
 
 
 async def test_backfill_absent_recorder_stays_insufficient(
@@ -137,8 +144,8 @@ async def test_backfill_absent_recorder_stays_insufficient(
 
     ent_reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    until = _by_suffix(entities, "_time_until_crossover")
-    state = hass.states.get(until.entity_id)
+    eta = _by_suffix(entities, "_crossover_eta")
+    state = hass.states.get(eta.entity_id)
     assert state.state == "unknown"
     assert state.attributes["status"] == STATUS_INSUFFICIENT_DATA
 
