@@ -12,6 +12,47 @@ the recent trend, estimates how long until that difference enters the band
 (a "crossing"). It is useful for questions like "when will the room reach the
 outside temperature?" or "when will production match consumption?".
 
+## Example use cases
+
+### 1. Keep the house cool (sommerliches Lüften)
+
+"Lüften" is the German habit of airing out rooms. In summer you want to open the
+windows only while it is cooler outside than inside, to let the heat out without
+letting it in.
+
+- **Sensor A:** outside temperature. **Sensor B:** inside temperature.
+- **Band:** ~0.5 °C. **Model:** exponential (enable **Use last-day history
+  pattern** to anticipate the evening turnaround).
+- The **Crossover ETA** tells you when the outside temperature will drop to the
+  inside temperature, and **Crossed** turns on at that moment: time to open the
+  windows. In the morning, when outside climbs back above inside, it is time to
+  close them again.
+
+### 2. Heating flow vs return (Heizung Vorlauf/Rücklauf)
+
+A water heating loop has a "Vorlauf" (flow, the hot water going out) and a
+"Rücklauf" (return, the cooler water coming back). As a room or buffer reaches
+temperature, the two converge.
+
+- **Sensor A:** Vorlauf temperature. **Sensor B:** Rücklauf temperature.
+- **Band:** a few °C (for example 3 °C). **Model:** exponential (the spread
+  relaxes toward equilibrium).
+- When the difference enters the band, **Crossed** turns on: the loop has given
+  off most of its heat / the cycle is finishing, and the **Crossover ETA**
+  estimates when that happens. A spread that never closes can flag a circulation
+  problem.
+
+### 3. Solar production vs home consumption
+
+Know when your solar output meets the house load: the break-even point where you
+stop importing and start exporting (and the reverse in the evening).
+
+- **Sensor A:** solar production (W). **Sensor B:** house consumption (W).
+- **Band:** tens of watts (for example 50 W). **Model:** power (robust to the
+  spiky, noisy readings typical of electrical signals).
+- The **Crossover ETA** predicts when production will meet consumption, so you can
+  time heavy appliances; **Crossed** marks the moment they balance.
+
 ## Entities (per pair)
 
 | Entity | What it shows | Unit |
