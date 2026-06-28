@@ -66,7 +66,8 @@
       "options": {
         "auto": "Auto (based on sensor type)",
         "exponential": "Exponential (slow, limit-bound; e.g. temperature)",
-        "linear": "Linear (steady trend)"
+        "linear": "Linear (steady trend)",
+        "power": "Power (robust; noisy/spiky electrical signals)"
       }
     }
   },

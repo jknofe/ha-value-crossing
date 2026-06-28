@@ -39,6 +39,11 @@ DEFAULT_WINDOW = 1800  # 30 minutes
 MAX_SAMPLES = 600  # hard cap on the rolling buffer
 MIN_SAMPLES_LINEAR = 2
 MIN_SAMPLES_EXPONENTIAL = 5
+MIN_SAMPLES_POWER = 5  # robust slope needs a few points to be meaningful
+
+# Robust power model (LOGIC-02): Theil-Sen + significance gate.
+THEILSEN_MAX_POINTS = 100  # subsample cap so pairwise stays ~few-thousand pairs
+POWER_TREND_K = 3.0  # trend is real only when |slope*span| > k * MAD(residuals)
 
 # Daily-pattern prediction (LOGIC-05).
 PROFILE_HOURS = 24  # hourly-mean buckets in a daily profile
@@ -53,3 +58,4 @@ STATUS_ASYMPTOTE_OUTSIDE_BAND = "asymptote_outside_band"  # exp asymptote outsid
 STATUS_INSUFFICIENT_DATA = "insufficient_data"  # not enough samples yet
 STATUS_FIT_FAILED = "fit_failed"  # degenerate/ill-conditioned fit
 STATUS_NO_CROSSING_HORIZON = "no_crossing_horizon"  # daily curve never crosses in 24h
+STATUS_NO_TREND = "no_trend"  # power model: trend indistinguishable from noise

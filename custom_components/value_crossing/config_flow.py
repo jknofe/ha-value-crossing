@@ -38,6 +38,7 @@ from .const import (
     MODEL_AUTO,
     MODEL_EXPONENTIAL,
     MODEL_LINEAR,
+    MODEL_POWER,
 )
 from .kinds import resolve
 
@@ -49,7 +50,7 @@ def _model_window_fields(
     return {
         vol.Required(CONF_MODEL, default=model_default): SelectSelector(
             SelectSelectorConfig(
-                options=[MODEL_AUTO, MODEL_EXPONENTIAL, MODEL_LINEAR],
+                options=[MODEL_AUTO, MODEL_EXPONENTIAL, MODEL_LINEAR, MODEL_POWER],
                 translation_key="model",
                 mode=SelectSelectorMode.DROPDOWN,
             )

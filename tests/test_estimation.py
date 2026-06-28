@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
+
 from custom_components.value_crossing.const import (
     MODEL_AUTO,
     MODEL_EXPONENTIAL,
@@ -14,6 +16,7 @@ from custom_components.value_crossing.const import (
     STATUS_DIVERGING,
     STATUS_INSUFFICIENT_DATA,
     STATUS_NO_CROSSING_HORIZON,
+    STATUS_NO_TREND,
     STATUS_OK,
     STATUS_WITHIN_BAND,
 )
@@ -159,11 +162,11 @@ def test_effective_model_override_precedence() -> None:
     assert effective_model(MODEL_LINEAR, GenericKind()) == MODEL_LINEAR
 
 
-def test_get_model_real_and_reserved() -> None:
+def test_get_model_real_and_fallback() -> None:
     linear = get_model(MODEL_LINEAR)
-    assert get_model(MODEL_EXPONENTIAL) is not linear  # now a real model
-    assert get_model(MODEL_POWER) is linear  # reserved until LOGIC-02
-    assert get_model("unknown") is linear
+    assert get_model(MODEL_EXPONENTIAL) is not linear  # real model
+    assert get_model(MODEL_POWER) is not linear  # real model (LOGIC-02)
+    assert get_model("unknown") is linear  # unknown id falls back to linear
 
 
 # --- rolling buffer ---------------------------------------------------------
@@ -319,3 +322,63 @@ def test_estimate_crossing_no_crossing_eta_none() -> None:
     assert est.status == STATUS_DIVERGING
     assert est.seconds_until is None
     assert est.eta is None
+
+
+# --- power model: Theil-Sen + significance gate (LOGIC-02) -------------------
+
+
+def _noisy_ramp(slope, v0, ts, noise_std, outliers, seed):
+    """Clean ramp ``v0 + slope*t`` plus Gaussian noise and a few big spikes."""
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(0, noise_std, len(ts))
+    vals = [
+        v0 + slope * t + float(n)
+        for t, n in zip(ts, noise, strict=True)
+    ]
+    for idx, bump in outliers:
+        vals[idx] += bump
+    return list(zip([float(t) for t in ts], vals, strict=True))
+
+
+def test_power_beats_linear_on_noisy_ramp() -> None:
+    # True ramp: diff 600 -> falling at 1.0/s, band 50 -> true crossing at diff=50.
+    band = 50.0
+    ts = list(range(0, 301, 2))  # last sample t=300
+    true_seconds = (600.0 - band) / 1.0 - 300.0  # remaining time from t=300 -> 250
+    # Outliers biased in time (high early, low late) to skew a least-squares slope;
+    # Theil-Sen's median pairwise slope shrugs them off.
+    outliers = [(3, 400), (6, 380), (145, -400), (148, -360)]
+    samples = _noisy_ramp(-1.0, 600.0, ts, noise_std=28.0, outliers=outliers, seed=7)
+
+    p_secs, p_status = get_model(MODEL_POWER)(samples, band)
+    l_secs, _ = get_model(MODEL_LINEAR)(samples, band)
+
+    assert p_status == STATUS_OK
+    assert p_secs is not None and l_secs is not None
+    p_err = abs(p_secs - true_seconds) / true_seconds
+    l_err = abs(l_secs - true_seconds) / true_seconds
+    assert p_err < 0.15  # power within 15% of the true crossing
+    assert p_err < l_err  # and materially better than bare linear
+
+
+def test_power_no_trend_on_flat_noise() -> None:
+    # Flat at 200 (outside band 50) + heavy noise, no real slope -> no_trend.
+    ts = list(range(0, 301, 2))
+    samples = _noisy_ramp(0.0, 200.0, ts, noise_std=40.0, outliers=[], seed=3)
+    secs, status = get_model(MODEL_POWER)(samples, band=50.0)
+    assert status == STATUS_NO_TREND
+    assert secs is None
+
+
+def test_power_within_band() -> None:
+    # All samples already inside the band -> within_band, 0 seconds.
+    samples = [(0.0, 5.0), (10.0, -4.0), (20.0, 6.0), (30.0, -3.0), (40.0, 4.0)]
+    assert get_model(MODEL_POWER)(samples, band=50.0) == (0.0, STATUS_WITHIN_BAND)
+
+
+def test_power_insufficient_data() -> None:
+    # Fewer than the power minimum (5) -> insufficient_data.
+    few = [(0.0, 100.0), (1.0, 90.0), (2.0, 80.0)]
+    secs, status = get_model(MODEL_POWER)(few, 50.0)
+    assert secs is None
+    assert status == STATUS_INSUFFICIENT_DATA

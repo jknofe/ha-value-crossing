@@ -10,9 +10,9 @@ Models implemented here:
 - ``exponential`` Newton's-law-of-cooling relaxation toward an asymptote, fit
   with Jacquelin's regression-of-the-integral method (numpy linear algebra only,
   no scipy / no iterative solver). Falls back to ``linear`` if ill-conditioned.
-
-``power`` (LOGIC-02) stays a reserved id that falls back to ``linear`` until
-registered via :func:`register_model`.
+- ``power``       Theil-Sen robust slope (median of pairwise slopes) for spiky
+  electrical signals, with a significance gate that reports ``no_trend`` instead
+  of extrapolating a fantasy ETA when the trend is lost in the noise (LOGIC-02).
 
 Free of any ``homeassistant`` import so it is unit-testable in isolation (uses
 numpy, which ships with Home Assistant Core). ``sensor``/``coordinator`` are the
@@ -37,17 +37,22 @@ from .const import (
     MAX_SAMPLES,
     MIN_SAMPLES_EXPONENTIAL,
     MIN_SAMPLES_LINEAR,
+    MIN_SAMPLES_POWER,
     MODEL_AUTO,
     MODEL_EXPONENTIAL,
     MODEL_LINEAR,
+    MODEL_POWER,
+    POWER_TREND_K,
     PROFILE_HOURS,
     STATUS_ASYMPTOTE_OUTSIDE_BAND,
     STATUS_DIVERGING,
     STATUS_FIT_FAILED,
     STATUS_INSUFFICIENT_DATA,
     STATUS_NO_CROSSING_HORIZON,
+    STATUS_NO_TREND,
     STATUS_OK,
     STATUS_WITHIN_BAND,
+    THEILSEN_MAX_POINTS,
 )
 from .kinds import PhysicalKind
 
@@ -364,9 +369,72 @@ def _exponential(samples: Sequence[Sample], band: float) -> tuple[float | None, 
     return None, STATUS_DIVERGING  # ratio >= 1: moving away from the band
 
 
+def fit_theilsen(samples: Sequence[Sample]) -> tuple[float, float] | None:
+    """Theil-Sen robust line fit: ``(slope, intercept)`` or ``None``.
+
+    The slope is the median of all pairwise slopes ``(v_j - v_i)/(t_j - t_i)``;
+    the intercept is the median of ``v_i - slope*t_i``. Robust to outlier spikes
+    (breakdown point ~29%), so spiky electrical signals do not derail it. For long
+    buffers the points are evenly subsampled to ``THEILSEN_MAX_POINTS`` first so
+    the O(n^2) pairwise count stays bounded. Returns ``None`` with too few points
+    or when every timestamp is identical.
+    """
+    n = len(samples)
+    if n < MIN_SAMPLES_POWER:
+        return None
+    t = np.array([s[0] for s in samples], dtype=float)
+    v = np.array([s[1] for s in samples], dtype=float)
+    if n > THEILSEN_MAX_POINTS:
+        idx = np.unique(np.linspace(0, n - 1, THEILSEN_MAX_POINTS).round().astype(int))
+        t, v = t[idx], v[idx]
+        _LOGGER.debug("Theil-Sen subsampled %d -> %d points", n, len(t))
+    i, j = np.triu_indices(len(t), k=1)
+    dt = t[j] - t[i]
+    valid = dt != 0
+    if not valid.any():
+        return None
+    slopes = (v[j] - v[i])[valid] / dt[valid]
+    slope = float(np.median(slopes))
+    intercept = float(np.median(v - slope * t))
+    return slope, intercept
+
+
+def _power(samples: Sequence[Sample], band: float) -> tuple[float | None, str]:
+    """Robust ``power`` model: Theil-Sen slope + significance gate (LOGIC-02).
+
+    Emits a crossing time only when the trend is distinguishable from the noise
+    (``|slope*span| > POWER_TREND_K * MAD(residuals)``); otherwise ``no_trend``.
+    Crossing extrapolation reuses the linear near-edge solver.
+    """
+    if len(samples) < MIN_SAMPLES_POWER:
+        return None, STATUS_INSUFFICIENT_DATA
+    fit = fit_theilsen(samples)
+    if fit is None:
+        return None, STATUS_FIT_FAILED
+    slope, intercept = fit
+    t_last = samples[-1][0]
+    v_now = slope * t_last + intercept
+    if abs(v_now) <= band:
+        return 0.0, STATUS_WITHIN_BAND
+    # Significance gate: the trend's total move over the window must stand out
+    # from the residual noise, else the apparent slope is just spikes.
+    t = np.array([s[0] for s in samples], dtype=float)
+    v = np.array([s[1] for s in samples], dtype=float)
+    residuals = v - (slope * t + intercept)
+    mad = float(np.median(np.abs(residuals - np.median(residuals))))
+    span = t_last - samples[0][0]
+    if abs(slope * span) <= POWER_TREND_K * mad:
+        return None, STATUS_NO_TREND
+    seconds = (_near_edge(v_now, band) - v_now) / slope
+    if seconds <= 0:
+        return None, STATUS_DIVERGING
+    return seconds, STATUS_OK
+
+
 _MODELS: dict[str, Model] = {
     MODEL_LINEAR: _linear,
     MODEL_EXPONENTIAL: _exponential,
+    MODEL_POWER: _power,
 }
 
 _warned: set[str] = set()
