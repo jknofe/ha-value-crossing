@@ -1,0 +1,74 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wertkreuzungs-Paar hinzufügen",
+        "description": "Benenne dieses Paar und wähle den ersten Sensor.",
+        "data": {
+          "name": "Name",
+          "sensor_a": "Sensor A"
+        },
+        "data_description": {
+          "name": "Anzeigename für dieses Paar; wird als Präfix für seine Entitäten verwendet.",
+          "sensor_a": "Der erste zu verfolgende Sensor."
+        }
+      },
+      "sensor_b": {
+        "title": "Zweiter Sensor und Band",
+        "description": "Wähle den zweiten Sensor (gleiche Einheit wie Sensor A) und das Band.",
+        "data": {
+          "sensor_b": "Sensor B",
+          "band": "Band",
+          "model": "Schätzmodell",
+          "window": "Anpassungsfenster (Sekunden)",
+          "daily_history": "Muster des Vortags verwenden"
+        },
+        "data_description": {
+          "sensor_b": "Der zweite Sensor; er muss dieselbe Maßeinheit wie Sensor A haben.",
+          "band": "Halbe Breite des Gleichheitsbands, in der Einheit der Sensoren. Das Paar gilt als gekreuzt, wenn die absolute Differenz kleiner oder gleich diesem Wert ist.",
+          "model": "Wie die Kreuzungszeit geschätzt wird. Automatisch wählt ein Modell anhand des Sensortyps.",
+          "window": "Wie viel jüngste Historie in die Schätzung einfließt.",
+          "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur."
+        }
+      },
+      "reconfigure": {
+        "title": "Wertkreuzungs-Paar bearbeiten",
+        "description": "Ändere die Sensoren, das Band, das Modell oder das Fenster für dieses Paar. Beide Sensoren müssen dieselbe Einheit haben.",
+        "data": {
+          "name": "Name",
+          "sensor_a": "Sensor A",
+          "sensor_b": "Sensor B",
+          "band": "Band",
+          "model": "Schätzmodell",
+          "window": "Anpassungsfenster (Sekunden)",
+          "daily_history": "Muster des Vortags verwenden"
+        },
+        "data_description": {
+          "name": "Anzeigename für dieses Paar.",
+          "sensor_a": "Der erste zu verfolgende Sensor.",
+          "sensor_b": "Der zweite Sensor; er muss dieselbe Maßeinheit wie Sensor A haben.",
+          "band": "Halbe Breite des Gleichheitsbands, in der Einheit der Sensoren. Das Paar gilt als gekreuzt, wenn die absolute Differenz kleiner oder gleich diesem Wert ist.",
+          "model": "Wie die Kreuzungszeit geschätzt wird. Automatisch wählt ein Modell anhand des Sensortyps.",
+          "window": "Wie viel jüngste Historie in die Schätzung einfließt.",
+          "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur."
+        }
+      }
+    },
+    "error": {
+      "unit_mismatch": "Die beiden Sensoren müssen dieselbe Maßeinheit haben."
+    },
+    "abort": {
+      "reconfigure_successful": "Paar aktualisiert."
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "auto": "Automatisch (nach Sensortyp)",
+        "exponential": "Exponentiell (langsam, grenzwertgebunden; z. B. Temperatur)",
+        "linear": "Linear (gleichmäßiger Trend)",
+        "power": "Power (robust; verrauschte/sprunghafte elektrische Signale)"
+      }
+    }
+  }
+}
