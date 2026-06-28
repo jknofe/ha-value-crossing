@@ -50,6 +50,8 @@ The repository layout is a standard custom component
 
 ## Configure
 
+### Add your first pair
+
 After restarting, go to **Settings -> Devices & Services -> Add Integration**
 and search for **Value Crossing**. The setup runs in two steps:
 
@@ -61,8 +63,19 @@ and search for **Value Crossing**. The setup runs in two steps:
    dynamic sensor along its own shape from the previous 24 hours instead of a
    short straight-line trend; best for daily-cyclic signals like temperature).
 
-Each pair is its own integration entry. You can change any of these later with
-**Reconfigure** on the device. Add another pair by adding the integration again.
+### Add more pairs
+
+Each pair is its own config entry (shown as its own device). To add **another
+pair you do not install the integration again**. On **Settings -> Devices &
+Services**, open the existing **Value Crossing** integration and choose **Add
+entry** (the "+" button on the integration's page) to run the same two-step
+setup for the new pair. Repeat for as many pairs as you like.
+
+### Edit a pair
+
+To change an existing pair (its sensors, band, model, fit window, or the
+last-day-history option), use **Reconfigure** on that pair's entry. There is no
+need to delete and recreate it.
 
 ## Status and limitations
 
@@ -76,3 +89,12 @@ guarantee.
 
 Home Assistant only. No extra Python dependencies (numpy ships with Home
 Assistant). Verified on Home Assistant 2026.x.
+
+## Credits
+
+The idea for this integration came from a gist by
+[benben](https://gist.github.com/benben/3f19e6d785d5e4040844e5581c4e13db).
+Thanks for sharing it.
+
+Related prior art:
+[ha-weatherstage](https://github.com/jknofe/ha-weatherstage).
