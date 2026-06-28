@@ -29,3 +29,7 @@ secrets.yaml
 
 # OS / editor
 .DS_Store
+
+# Agent instruction files (local only, not in the public repo)
+/AGENTS.md
+/CLAUDE.md
