@@ -1,8 +1,8 @@
 # Agent working memory — separate repo, never committed to the project repo
 .ai/
 
-# Local Claude settings (machine-specific)
-.claude/settings.local.json
+# Claude Code agent scaffold (local only, never committed to the public repo)
+.claude/
 
 # Python
 __pycache__/
