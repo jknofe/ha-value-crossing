@@ -14,6 +14,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from functools import partial
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -23,12 +24,19 @@ from .const import (
     CONF_BAND,
     CONF_DAILY_HISTORY,
     CONF_MODEL,
+    CONF_NOTIFY,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
     CONF_WINDOW,
     DEFAULT_WINDOW,
+    DIR_FROM_ABOVE,
+    DIR_FROM_BELOW,
+    DIR_NONE,
+    EVENT_CROSSED,
     INHERITABLE_DEVICE_CLASSES,
+    NOTIFY_BOTH,
+    NOTIFY_NO,
     PROFILE_HOURS,
     STATUS_INSUFFICIENT_DATA,
     STATUS_OK,
@@ -120,6 +128,7 @@ class PairCoordinator:
         self.window: float = float(entry.data.get(CONF_WINDOW, DEFAULT_WINDOW))
         self._model_override: str | None = entry.data.get(CONF_MODEL)
         self._daily_history: bool = bool(entry.data.get(CONF_DAILY_HISTORY, False))
+        self._notify: str = entry.data.get(CONF_NOTIFY, NOTIFY_NO)
         self._buffer = RollingBuffer(self.window)
         self._a_buffer = RollingBuffer(self.window)
         self._estimate = Estimate(None, None, STATUS_INSUFFICIENT_DATA)
@@ -128,6 +137,10 @@ class PairCoordinator:
         # Cached daily-pattern hourly-mean profiles (LOGIC-05); None until primed.
         self._profile_a: Profile | None = None
         self._profile_b: Profile | None = None
+        # Crossing-transition tracking (LOGIC-04): the previous difference and the
+        # direction of the last observed crossing (for the direction sensor).
+        self._prev_diff: float | None = None
+        self._last_cross_direction: str | None = None
 
     # --- derived values ---------------------------------------------------
 
@@ -196,6 +209,38 @@ class PairCoordinator:
         t0 = samples[0][0]
         rebased = [(t - t0, v) for t, v in samples]
         return project_value(rebased, est.seconds_until)
+
+    # --- crossing direction (LOGIC-04) ------------------------------------
+
+    def _classify_direction(self, diff: float | None) -> str | None:
+        """Side an out-of-band difference would approach the band from.
+
+        ``from_above`` when A is above B (``diff > band``), ``from_below`` when A is
+        below B (``diff < -band``); ``None`` when within the band or unknown.
+        """
+        if diff is None:
+            return None
+        if diff > self.band:
+            return DIR_FROM_ABOVE
+        if diff < -self.band:
+            return DIR_FROM_BELOW
+        return None
+
+    def crossing_direction(self) -> str | None:
+        """Direction for the sensor: predicted while pending, crossed-from in band.
+
+        ``None`` (entity ``unknown``) when a source is unusable; ``none`` when no
+        crossing is predicted; otherwise the approach direction while outside the
+        band, or the direction the pair last crossed from while within it.
+        """
+        diff = self.difference()
+        if diff is None:
+            return None
+        if abs(diff) <= self.band:
+            return self._last_cross_direction or DIR_NONE
+        if self._estimate.status == STATUS_OK:
+            return self._classify_direction(diff) or DIR_NONE
+        return DIR_NONE
 
     # --- daily-pattern prediction (LOGIC-05) ------------------------------
 
@@ -328,6 +373,10 @@ class PairCoordinator:
         Degrades silently to the cold-start path if the recorder is unavailable
         or has too little history; never raises out of entry setup.
         """
+        # Baseline for crossing detection (LOGIC-04): records the at-setup
+        # difference so the first live transition can be classified. No event or
+        # notification is emitted here.
+        self._prev_diff = self.difference()
         if "recorder" not in self.hass.config.components:
             return
         try:
@@ -390,5 +439,53 @@ class PairCoordinator:
         if a is not None:
             self._a_buffer.add(now.timestamp(), a)
         self._estimate = self._compute_estimate(now)
+        self._maybe_announce_crossing(diff)
+        self._prev_diff = diff
         for update in list(self._listeners):
             update()
+
+    def _maybe_announce_crossing(self, diff: float | None) -> None:
+        """Fire the event (always) + notification (if enabled) on an into-band cross.
+
+        A crossing is an out-of-band -> in-band transition with a known prior
+        difference, so the approach direction is classifiable. Fires once per
+        crossing; nothing fires while staying in the band or when the prior
+        difference is unknown.
+        """
+        prev = self._prev_diff
+        if prev is None or abs(prev) <= self.band:
+            return  # no known out-of-band prior -> not a fresh crossing
+        if diff is None or abs(diff) > self.band:
+            return  # not inside the band now
+        direction = self._classify_direction(prev)
+        if direction is None:
+            return
+        self._last_cross_direction = direction
+        payload = {
+            "entry_id": self.entry.entry_id,
+            "name": self.name,
+            "sensor_a": self.sensor_a,
+            "sensor_b": self.sensor_b,
+            "value_a": _as_float(self.hass.states.get(self.sensor_a)),
+            "value_b": _as_float(self.hass.states.get(self.sensor_b)),
+            "difference": diff,
+            "band": self.band,
+            "crossover_value": self.predicted_crossover_value,
+            "direction": direction,
+        }
+        self.hass.bus.async_fire(EVENT_CROSSED, payload)
+        if self._notify == NOTIFY_NO or self._notify not in (NOTIFY_BOTH, direction):
+            return
+        unit = self.source_unit or ""
+        message = (
+            f"{self.name}: {self.sensor_a} and {self.sensor_b} crossed "
+            f"({direction}). A = {payload['value_a']} {unit}, "
+            f"B = {payload['value_b']} {unit}, difference = {diff:.3g} {unit}, "
+            f"band = {self.band} {unit}."
+        )
+        persistent_notification.async_create(
+            self.hass,
+            message,
+            title=f"Value Crossing: {self.name}",
+            notification_id=f"value_crossing_{self.entry.entry_id}",
+        )

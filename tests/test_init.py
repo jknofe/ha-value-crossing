@@ -13,10 +13,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.value_crossing.const import (
     CONF_BAND,
     CONF_DAILY_HISTORY,
+    CONF_NOTIFY,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
     DOMAIN,
+    EVENT_CROSSED,
     STATUS_INSUFFICIENT_DATA,
     STATUS_WITHIN_BAND,
 )
@@ -48,7 +50,7 @@ def _by_suffix(entities, suffix):
     return next(e for e in entities if e.unique_id.endswith(suffix))
 
 
-async def test_setup_creates_four_entities(hass: HomeAssistant) -> None:
+async def test_setup_creates_five_entities(hass: HomeAssistant) -> None:
     _set(hass, "sensor.a", "20")
     _set(hass, "sensor.b", "18")
     entry = _entry(hass)
@@ -58,7 +60,7 @@ async def test_setup_creates_four_entities(hass: HomeAssistant) -> None:
 
     ent_reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    assert len(entities) == 4
+    assert len(entities) == 5
 
     diff = _by_suffix(entities, "_difference")
     assert hass.states.get(diff.entity_id).state == "2.0"
@@ -66,11 +68,13 @@ async def test_setup_creates_four_entities(hass: HomeAssistant) -> None:
     crossed = _by_suffix(entities, "_crossed")
     assert hass.states.get(crossed.entity_id).state == "off"
 
-    # No crossing predicted yet -> ETA and crossover value unknown.
+    # No crossing predicted yet -> ETA and crossover value unknown, direction none.
     eta = _by_suffix(entities, "_crossover_eta")
     assert hass.states.get(eta.entity_id).state == "unknown"
     value = _by_suffix(entities, "_crossover_value")
     assert hass.states.get(value.entity_id).state == "unknown"
+    direction = _by_suffix(entities, "_crossing_direction")
+    assert hass.states.get(direction.entity_id).state == "none"
 
 
 class _FakeRecorder:
@@ -296,7 +300,7 @@ async def test_reload_has_no_duplicate_entities(hass: HomeAssistant) -> None:
 
     ent_reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    assert len(entities) == 4
+    assert len(entities) == 5
 
 
 async def test_unload_makes_entities_unavailable(hass: HomeAssistant) -> None:
@@ -333,3 +337,121 @@ async def test_remove_entry_deletes_entities(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert er.async_entries_for_config_entry(ent_reg, entry.entry_id) == []
     assert hass.states.get(diff.entity_id) is None
+
+
+# --- LOGIC-04: crossing notifications + direction sensor --------------------
+
+_NOTIFY_PATH = "homeassistant.components.persistent_notification.async_create"
+
+
+async def _setup_notify(hass, notify, a, b):
+    """Set up a pair with a notify mode and an out-of-band starting difference."""
+    _set(hass, "sensor.a", str(a))
+    _set(hass, "sensor.b", str(b))
+    entry = _entry(hass, **{CONF_NOTIFY: notify})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def _move(hass, a, b):
+    """Move both sources; capture crossing events and notification calls."""
+    events: list[dict] = []
+    hass.bus.async_listen(EVENT_CROSSED, lambda e: events.append(dict(e.data)))
+    with patch(_NOTIFY_PATH) as notify_mock:
+        _set(hass, "sensor.a", str(a))
+        _set(hass, "sensor.b", str(b))
+        await hass.async_block_till_done()
+    return events, notify_mock
+
+
+async def test_crossing_event_always_fires_and_notify_no_suppresses(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _setup_notify(hass, "no", 30, 20)  # A above B -> from_above
+    events, notify_mock = await _move(hass, 20.1, 20)  # into the band
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["direction"] == "from_above"
+    assert ev["name"] == "Pair"
+    assert ev["sensor_a"] == "sensor.a" and ev["sensor_b"] == "sensor.b"
+    assert ev["entry_id"] == entry.entry_id
+    assert ev["band"] == 0.5
+    assert ev["value_a"] == 20.1 and ev["value_b"] == 20.0
+    assert abs(ev["difference"] - 0.1) < 1e-9
+    assert notify_mock.call_count == 0  # notify=no -> event but no notification
+
+
+async def test_notify_both_creates_notification(hass: HomeAssistant) -> None:
+    entry = await _setup_notify(hass, "both", 30, 20)
+    events, notify_mock = await _move(hass, 20.1, 20)
+    assert len(events) == 1
+    assert notify_mock.call_count == 1
+    args, kwargs = notify_mock.call_args
+    assert "Pair" in args[1]  # message mentions the pair name
+    assert kwargs["notification_id"] == f"value_crossing_{entry.entry_id}"
+
+
+async def test_notify_direction_filter_suppresses_mismatch(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_notify(hass, "from_below", 30, 20)  # crossing will be from_above
+    events, notify_mock = await _move(hass, 20.1, 20)
+    assert events[0]["direction"] == "from_above"
+    assert notify_mock.call_count == 0  # filtered out
+
+
+async def test_notify_from_below_matches_below_crossing(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_notify(hass, "from_below", 10, 20)  # A below B -> from_below
+    events, notify_mock = await _move(hass, 19.9, 20)
+    assert events[0]["direction"] == "from_below"
+    assert notify_mock.call_count == 1
+
+
+async def test_no_refire_while_staying_crossed(hass: HomeAssistant) -> None:
+    await _setup_notify(hass, "both", 30, 20)
+    events, _ = await _move(hass, 20.1, 20)  # cross
+    assert len(events) == 1
+    events2, notify2 = await _move(hass, 20.2, 20)  # still in band
+    assert len(events2) == 0
+    assert notify2.call_count == 0
+
+
+async def test_unknown_prior_difference_no_fire(hass: HomeAssistant) -> None:
+    await _setup_notify(hass, "both", 30, 20)  # baseline prev diff = 10
+    hass.states.async_set("sensor.a", "unavailable", {"unit_of_measurement": "°C"})
+    await hass.async_block_till_done()  # prev diff becomes unknown
+    events, notify_mock = await _move(hass, 20.1, 20)  # into band, prior unknown
+    assert len(events) == 0
+    assert notify_mock.call_count == 0
+
+
+async def test_crossing_direction_sensor_crossed_from(hass: HomeAssistant) -> None:
+    entry = await _setup_notify(hass, "no", 30, 20)  # from_above side
+    await _move(hass, 20.1, 20)  # cross into the band
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    direction = _by_suffix(entities, "_crossing_direction")
+    assert hass.states.get(direction.entity_id).state == "from_above"
+
+
+async def test_crossing_direction_predicted_while_pending(
+    hass: HomeAssistant,
+) -> None:
+    # Generic unit -> linear model (predicts from 2 samples). A constant, B rising
+    # toward it: the difference falls but stays outside the band, so a crossing is
+    # predicted and the sensor shows the approach direction (from_above).
+    hass.states.async_set("sensor.a", "100", {"unit_of_measurement": "x"})
+    hass.states.async_set("sensor.b", "0", {"unit_of_measurement": "x"})
+    entry = _entry(hass, **{CONF_NOTIFY: "no"})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    for b in (50, 90):
+        hass.states.async_set("sensor.b", str(b), {"unit_of_measurement": "x"})
+        await hass.async_block_till_done()
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    direction = _by_suffix(entities, "_crossing_direction")
+    assert hass.states.get(direction.entity_id).state == "from_above"

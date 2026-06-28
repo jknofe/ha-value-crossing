@@ -1,9 +1,9 @@
 """Sensor platform for value_crossing.
 
-Three sensors per pair: the live signed difference, the wall-clock crossover
-ETA, and the predicted crossover value (the value the sensors meet at). The ETA
-and crossover-value sensors are fed by the estimation model and report
-``unknown`` when no crossing is predicted.
+Four sensors per pair: the live signed difference, the predicted crossover value
+(the value the sensors meet at), the wall-clock crossover ETA, and the crossing
+direction. The ETA and crossover-value sensors are fed by the estimation model
+and report ``unknown`` when no crossing is predicted.
 """
 
 from __future__ import annotations
@@ -19,7 +19,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import ValueCrossingConfigEntry
-from .const import KEY_CROSSOVER_VALUE, KEY_DIFFERENCE, KEY_ETA
+from .const import (
+    DIR_FROM_ABOVE,
+    DIR_FROM_BELOW,
+    DIR_NONE,
+    KEY_CROSSING_DIRECTION,
+    KEY_CROSSOVER_VALUE,
+    KEY_DIFFERENCE,
+    KEY_ETA,
+)
 from .entity import ValueCrossingEntity
 
 
@@ -28,13 +36,14 @@ async def async_setup_entry(
     entry: ValueCrossingConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the three sensors for this pair."""
+    """Set up the four sensors for this pair."""
     coordinator = entry.runtime_data
     async_add_entities(
         [
             DifferenceSensor(coordinator),
             CrossoverValueSensor(coordinator),
             CrossoverEtaSensor(coordinator),
+            CrossingDirectionSensor(coordinator),
         ]
     )
 
@@ -112,3 +121,19 @@ class CrossoverEtaSensor(ValueCrossingEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, str]:
         """Surface why there is (or isn't) a crossing estimate."""
         return {"status": self.coordinator.estimate.status}
+
+
+class CrossingDirectionSensor(ValueCrossingEntity, SensorEntity):
+    """Direction the pair crosses from: predicted while pending, actual in band."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [DIR_FROM_ABOVE, DIR_FROM_BELOW, DIR_NONE]
+
+    def __init__(self, coordinator) -> None:
+        """Init the crossing-direction sensor."""
+        super().__init__(coordinator, KEY_CROSSING_DIRECTION)
+
+    @property
+    def native_value(self) -> str | None:
+        """Crossing direction, or None when a source is unusable."""
+        return self.coordinator.crossing_direction()

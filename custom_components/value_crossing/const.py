@@ -14,12 +14,29 @@ CONF_SENSOR_B = "sensor_b"
 CONF_BAND = "band"
 CONF_MODEL = "model"  # estimation-model override; surfaced by LOGIC-01/02
 CONF_DAILY_HISTORY = "daily_history"  # opt-in daily-pattern prediction (LOGIC-05)
+CONF_NOTIFY = "notify"  # persistent-notification gate + direction filter (LOGIC-04)
+
+# Notify dropdown options (LOGIC-04). Gates only the persistent notification; the
+# value_crossing_crossed event fires on every crossing regardless.
+NOTIFY_NO = "no"
+NOTIFY_BOTH = "both"
+NOTIFY_FROM_BELOW = "from_below"
+NOTIFY_FROM_ABOVE = "from_above"
+
+# Crossing direction (LOGIC-04): the side the difference approached the band from.
+DIR_FROM_ABOVE = "from_above"  # diff was > band (A above B) and fell into the band
+DIR_FROM_BELOW = "from_below"  # diff was < -band (A below B) and rose into the band
+DIR_NONE = "none"  # no crossing predicted / direction not classifiable
+
+# Bus event fired on every crossing (LOGIC-04).
+EVENT_CROSSED = "value_crossing_crossed"
 
 # Entity translation keys (also used to build unique-id suffixes).
 KEY_DIFFERENCE = "difference"
 KEY_ETA = "crossover_eta"
 KEY_CROSSOVER_VALUE = "crossover_value"
 KEY_CROSSED = "crossed"
+KEY_CROSSING_DIRECTION = "crossing_direction"
 
 # Device-class strings whose measurement makes sense to inherit onto the
 # signed difference sensor (a temperature/power difference is still that class).

@@ -11,6 +11,7 @@ from custom_components.value_crossing.const import (
     CONF_BAND,
     CONF_DAILY_HISTORY,
     CONF_MODEL,
+    CONF_NOTIFY,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
@@ -18,6 +19,7 @@ from custom_components.value_crossing.const import (
     DEFAULT_WINDOW,
     DOMAIN,
     MODEL_AUTO,
+    NOTIFY_NO,
 )
 
 
@@ -60,10 +62,28 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     assert data[CONF_SENSOR_A] == "sensor.inside"
     assert data[CONF_SENSOR_B] == "sensor.outside"
     assert data[CONF_BAND] == 0.5
-    # Model/window/daily-history default in when not supplied.
+    # Model/window/daily-history/notify default in when not supplied.
     assert data[CONF_MODEL] == MODEL_AUTO
     assert data[CONF_WINDOW] == DEFAULT_WINDOW
     assert data[CONF_DAILY_HISTORY] is False
+    assert data[CONF_NOTIFY] == NOTIFY_NO
+
+
+async def test_notify_mode_persisted(hass: HomeAssistant) -> None:
+    _set(hass, "sensor.inside", "20", "°C", "temperature")
+    _set(hass, "sensor.outside", "18", "°C", "temperature")
+
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_PAIR_NAME: "p", CONF_SENSOR_A: "sensor.inside"},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_SENSOR_B: "sensor.outside", CONF_BAND: 0.5, CONF_NOTIFY: "from_above"},
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_NOTIFY] == "from_above"
 
 
 async def test_daily_history_flag_persisted(hass: HomeAssistant) -> None:

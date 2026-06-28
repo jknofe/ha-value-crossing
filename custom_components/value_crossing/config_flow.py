@@ -29,6 +29,7 @@ from .const import (
     CONF_BAND,
     CONF_DAILY_HISTORY,
     CONF_MODEL,
+    CONF_NOTIFY,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
@@ -39,14 +40,21 @@ from .const import (
     MODEL_EXPONENTIAL,
     MODEL_LINEAR,
     MODEL_POWER,
+    NOTIFY_BOTH,
+    NOTIFY_FROM_ABOVE,
+    NOTIFY_FROM_BELOW,
+    NOTIFY_NO,
 )
 from .kinds import resolve
 
 
 def _model_window_fields(
-    model_default: str, window_default: float, daily_default: bool = False
+    model_default: str,
+    window_default: float,
+    daily_default: bool = False,
+    notify_default: str = NOTIFY_NO,
 ) -> dict:
-    """Schema entries for the per-pair model override, fit window + daily flag."""
+    """Schema entries for the per-pair model, window, daily flag + notify mode."""
     return {
         vol.Required(CONF_MODEL, default=model_default): SelectSelector(
             SelectSelectorConfig(
@@ -66,6 +74,18 @@ def _model_window_fields(
         vol.Required(
             CONF_DAILY_HISTORY, default=daily_default
         ): BooleanSelector(),
+        vol.Required(CONF_NOTIFY, default=notify_default): SelectSelector(
+            SelectSelectorConfig(
+                options=[
+                    NOTIFY_NO,
+                    NOTIFY_BOTH,
+                    NOTIFY_FROM_BELOW,
+                    NOTIFY_FROM_ABOVE,
+                ],
+                translation_key="notify",
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
     }
 
 
@@ -138,6 +158,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_MODEL: user_input[CONF_MODEL],
                         CONF_WINDOW: user_input[CONF_WINDOW],
                         CONF_DAILY_HISTORY: user_input[CONF_DAILY_HISTORY],
+                        CONF_NOTIFY: user_input[CONF_NOTIFY],
                     },
                 )
 
@@ -197,6 +218,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                     current.get(CONF_MODEL, MODEL_AUTO),
                     current.get(CONF_WINDOW, DEFAULT_WINDOW),
                     current.get(CONF_DAILY_HISTORY, False),
+                    current.get(CONF_NOTIFY, NOTIFY_NO),
                 ),
             }
         )

@@ -9,6 +9,9 @@
       },
       "crossover_eta": {
         "default": "mdi:clock-outline"
+      },
+      "crossing_direction": {
+        "default": "mdi:arrow-up-down"
       }
     },
     "binary_sensor": {

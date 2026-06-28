@@ -21,14 +21,16 @@
           "band": "Band",
           "model": "Schätzmodell",
           "window": "Anpassungsfenster (Sekunden)",
-          "daily_history": "Muster des Vortags verwenden"
+          "daily_history": "Muster des Vortags verwenden",
+          "notify": "Bei Kreuzung benachrichtigen"
         },
         "data_description": {
           "sensor_b": "Der zweite Sensor; er muss dieselbe Maßeinheit wie Sensor A haben.",
           "band": "Halbe Breite des Gleichheitsbands, in der Einheit der Sensoren. Das Paar gilt als gekreuzt, wenn die absolute Differenz kleiner oder gleich diesem Wert ist.",
           "model": "Wie die Kreuzungszeit geschätzt wird. Automatisch wählt ein Modell anhand des Sensortyps.",
           "window": "Wie viel jüngste Historie in die Schätzung einfließt.",
-          "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur."
+          "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur.",
+          "notify": "Zeigt eine dauerhafte Benachrichtigung, wenn dieses Paar sich kreuzt, optional nur in einer Richtung. Das Ereignis value_crossing_crossed wird unabhängig davon bei jeder Kreuzung ausgelöst."
         }
       },
       "reconfigure": {
@@ -41,7 +43,8 @@
           "band": "Band",
           "model": "Schätzmodell",
           "window": "Anpassungsfenster (Sekunden)",
-          "daily_history": "Muster des Vortags verwenden"
+          "daily_history": "Muster des Vortags verwenden",
+          "notify": "Bei Kreuzung benachrichtigen"
         },
         "data_description": {
           "name": "Anzeigename für dieses Paar.",
@@ -50,7 +53,8 @@
           "band": "Halbe Breite des Gleichheitsbands, in der Einheit der Sensoren. Das Paar gilt als gekreuzt, wenn die absolute Differenz kleiner oder gleich diesem Wert ist.",
           "model": "Wie die Kreuzungszeit geschätzt wird. Automatisch wählt ein Modell anhand des Sensortyps.",
           "window": "Wie viel jüngste Historie in die Schätzung einfließt.",
-          "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur."
+          "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur.",
+          "notify": "Zeigt eine dauerhafte Benachrichtigung, wenn dieses Paar sich kreuzt, optional nur in einer Richtung. Das Ereignis value_crossing_crossed wird unabhängig davon bei jeder Kreuzung ausgelöst."
         }
       }
     },
@@ -68,6 +72,25 @@
         "exponential": "Exponentiell (langsam, grenzwertgebunden; z. B. Temperatur)",
         "linear": "Linear (gleichmäßiger Trend)",
         "power": "Power (robust; verrauschte/sprunghafte elektrische Signale)"
+      }
+    },
+    "notify": {
+      "options": {
+        "no": "Keine Benachrichtigung",
+        "both": "Beide Richtungen",
+        "from_below": "Wenn A von unten zu B aufsteigt",
+        "from_above": "Wenn A von oben zu B abfällt"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "crossing_direction": {
+        "state": {
+          "from_above": "Von oben",
+          "from_below": "Von unten",
+          "none": "Keine"
+        }
       }
     }
   }

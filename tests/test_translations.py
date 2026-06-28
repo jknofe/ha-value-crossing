@@ -57,8 +57,12 @@ def test_de_covers_same_config_and_selector_as_en() -> None:
 
 
 def test_de_omits_entity_names_for_english_fallback() -> None:
-    # Entity display names are intentionally left English (UI-02 decision).
-    assert "entity" not in _load(_DE)
+    # Entity display *names* are intentionally left English (UI-02 decision);
+    # enum state translations are allowed (LOGIC-04 crossing_direction).
+    de = _load(_DE)
+    for domain, ents in de.get("entity", {}).items():
+        for key, spec in ents.items():
+            assert "name" not in spec, f"{domain}.{key} name should stay English"
 
 
 def test_de_has_no_em_or_en_dashes() -> None:
