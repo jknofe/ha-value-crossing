@@ -94,28 +94,16 @@ def _stat_epoch(value) -> float | None:
         return None
 
 
-def _profiles_from_stats(
-    rows, now: datetime
-) -> tuple[Profile | None, Profile | None, Profile | None]:
-    """Build (mean, min, max) hourly profiles from statistics rows, or Nones.
-
-    Each profile is binned by hour-of-day; a type yields ``None`` when no row
-    carries it. Returns all-None when there are no rows at all.
-    """
-
-    def _profile(key: str) -> Profile | None:
-        points = [
-            (_stat_epoch(r.get("start")), r.get(key))
-            for r in rows
-            if r.get(key) is not None and _stat_epoch(r.get("start")) is not None
-        ]
-        if not points:
-            return None
-        return _normalize_profile(bin_hourly_means(points, now))
-
-    if not rows:
-        return None, None, None
-    return _profile("mean"), _profile("min"), _profile("max")
+def _mean_profile_from_stats(rows, now: datetime) -> Profile | None:
+    """Hourly-mean profile binned by hour-of-day from statistics rows, or None."""
+    points = [
+        (_stat_epoch(r.get("start")), r.get("mean"))
+        for r in rows or []
+        if r.get("mean") is not None and _stat_epoch(r.get("start")) is not None
+    ]
+    if not points:
+        return None
+    return _normalize_profile(bin_hourly_means(points, now))
 
 
 class PairCoordinator:
@@ -137,15 +125,9 @@ class PairCoordinator:
         self._estimate = Estimate(None, None, STATUS_INSUFFICIENT_DATA)
         self._listeners: list[Callable[[], None]] = []
         self._unsub: Callable[[], None] | None = None
-        # Cached daily-pattern profiles (LOGIC-05); None until primed / when off.
-        # Per-hour mean drives the projection; min/max are captured but unused for
-        # now (#min-max: enables a future amplitude correction without a re-fetch).
-        self._profile_a: list[float | None] | None = None
-        self._profile_b: list[float | None] | None = None
-        self._min_a: list[float | None] | None = None
-        self._max_a: list[float | None] | None = None
-        self._min_b: list[float | None] | None = None
-        self._max_b: list[float | None] | None = None
+        # Cached daily-pattern hourly-mean profiles (LOGIC-05); None until primed.
+        self._profile_a: Profile | None = None
+        self._profile_b: Profile | None = None
 
     # --- derived values ---------------------------------------------------
 
@@ -273,9 +255,9 @@ class PairCoordinator:
     async def async_prime_daily_profile(self) -> None:
         """Fetch and cache both sensors' 24h hourly profiles when the flag is on.
 
-        Prefers HA long-term statistics (hourly mean/min/max); falls back to
-        binning raw recorder history for any sensor without statistics. Best
-        effort: guards on recorder availability and never raises out of setup.
+        Prefers HA long-term statistics (hourly mean); falls back to binning raw
+        recorder history for any sensor without statistics. Best effort: guards on
+        recorder availability and never raises out of setup.
         """
         if not self._daily_history:
             return
@@ -299,15 +281,11 @@ class PairCoordinator:
                     {self.sensor_a, self.sensor_b},
                     "hour",
                     None,
-                    {"mean", "min", "max"},
+                    {"mean"},
                 )
             )
-            (self._profile_a, self._min_a, self._max_a) = _profiles_from_stats(
-                stats.get(self.sensor_a), now
-            )
-            (self._profile_b, self._min_b, self._max_b) = _profiles_from_stats(
-                stats.get(self.sensor_b), now
-            )
+            self._profile_a = _mean_profile_from_stats(stats.get(self.sensor_a), now)
+            self._profile_b = _mean_profile_from_stats(stats.get(self.sensor_b), now)
 
             # Fall back to raw history for any sensor lacking statistics.
             missing = [

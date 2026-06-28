@@ -33,7 +33,6 @@ import numpy as np
 from .const import (
     DAILY_HORIZON_HOURS,
     DAILY_STEP_SECONDS,
-    DEFAULT_WINDOW,
     MAX_SAMPLES,
     MIN_SAMPLES_EXPONENTIAL,
     MIN_SAMPLES_LINEAR,
@@ -69,9 +68,7 @@ class Estimate:
     seconds_until: float | None
     eta: datetime | None
     status: str
-    # Predicted meeting value, set only by the daily-pattern path (LOGIC-05);
-    # left None by the difference models, where the coordinator derives it from a
-    # live projection of sensor A instead.
+    # Set only by the daily-pattern path (LOGIC-05); None for the difference models.
     crossover_value: float | None = None
 
 
@@ -132,11 +129,9 @@ def merge_difference_series(
 
 
 # --- daily-pattern projection (LOGIC-05) ------------------------------------
-#
-# A *profile* is a 24-slot list of hourly means indexed by hour-of-day (UTC),
-# ``None`` for hours with no data. The hour-of-day of an epoch timestamp is
-# ``(t % 86400) / 3600`` so these helpers need no datetime/timezone handling and
-# stay pure. ``now`` may be a ``datetime`` or a raw epoch float.
+# A *profile* is a 24-slot list of hourly means by hour-of-day (UTC), None for
+# empty hours; hour-of-day = (t % 86400) / 3600 keeps these helpers tz-free.
+# ``now`` may be a ``datetime`` or a raw epoch float.
 
 _SECONDS_PER_DAY = 86400.0
 
@@ -440,11 +435,6 @@ _MODELS: dict[str, Model] = {
 _warned: set[str] = set()
 
 
-def register_model(model_id: str, model: Model) -> None:
-    """Register (or override) a model implementation. Used by LOGIC-02."""
-    _MODELS[model_id] = model
-
-
 def get_model(model_id: str) -> Model:
     """Return the model for ``model_id``, falling back to ``linear``."""
     model = _MODELS.get(model_id)
@@ -481,8 +471,3 @@ def estimate_crossing(
     else:
         eta = None
     return Estimate(seconds_until=seconds, eta=eta, status=status)
-
-
-def new_buffer(window: float = DEFAULT_WINDOW) -> RollingBuffer:
-    """Convenience factory for a window-sized rolling buffer."""
-    return RollingBuffer(window)
