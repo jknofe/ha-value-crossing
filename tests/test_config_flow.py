@@ -16,7 +16,6 @@ from custom_components.value_crossing.const import (
     CONF_SENSOR_A,
     CONF_SENSOR_B,
     CONF_WINDOW,
-    DEFAULT_WINDOW,
     DOMAIN,
     MODEL_AUTO,
     NOTIFY_NO,
@@ -64,7 +63,7 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     assert data[CONF_BAND] == 0.5
     # Model/window/daily-history/notify default in when not supplied.
     assert data[CONF_MODEL] == MODEL_AUTO
-    assert data[CONF_WINDOW] == DEFAULT_WINDOW
+    assert data[CONF_WINDOW] == 3600  # temperature kind's default window
     assert data[CONF_DAILY_HISTORY] is False
     assert data[CONF_NOTIFY] == NOTIFY_NO
 
@@ -122,6 +121,10 @@ async def test_sensor_b_filtered_by_device_class_and_band_default(
     band_key = next(k for k in schema if k == CONF_BAND)
     # Temperature kind's default_band (ARCH-01) seeds the field.
     assert band_key.default() == 0.5
+
+    window_key = next(k for k in schema if k == CONF_WINDOW)
+    # Temperature kind defaults the fit window to 3600 s (longer = steadier).
+    assert window_key.default() == 3600
 
 
 async def test_unit_mismatch_rejected(hass: HomeAssistant) -> None:

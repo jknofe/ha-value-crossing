@@ -171,7 +171,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_BAND, default=kind.default_band): NumberSelector(
                     NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any")
                 ),
-                **_model_window_fields(MODEL_AUTO, DEFAULT_WINDOW),
+                **_model_window_fields(MODEL_AUTO, kind.default_window),
             }
         )
         return self.async_show_form(

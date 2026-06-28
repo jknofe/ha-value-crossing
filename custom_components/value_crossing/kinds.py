@@ -14,7 +14,7 @@ unit-tested in isolation.
 
 from __future__ import annotations
 
-from .const import MODEL_EXPONENTIAL, MODEL_LINEAR, MODEL_POWER
+from .const import DEFAULT_WINDOW, MODEL_EXPONENTIAL, MODEL_LINEAR, MODEL_POWER
 
 
 class PhysicalKind:
@@ -29,6 +29,7 @@ class PhysicalKind:
     label: str = "Base"
     default_model: str = MODEL_LINEAR
     default_band: float = 0.0
+    default_window: float = DEFAULT_WINDOW  # seconds of history fed to the fit
     units: frozenset[str] = frozenset()
     device_classes: frozenset[str] = frozenset()
 
@@ -59,6 +60,7 @@ class TemperatureKind(PhysicalKind):
     label = "Temperature"
     default_model = MODEL_EXPONENTIAL
     default_band = 0.5
+    default_window = 3600  # temperature drifts slowly; a longer window is steadier
     units = frozenset({"°C", "°F", "K"})
     device_classes = frozenset({"temperature"})
 
