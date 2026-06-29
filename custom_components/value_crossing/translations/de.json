@@ -22,7 +22,8 @@
           "model": "Schätzmodell",
           "window": "Anpassungsfenster (Sekunden)",
           "daily_history": "Muster des Vortags verwenden",
-          "notify": "Bei Kreuzung benachrichtigen"
+          "notify": "Bei Kreuzung benachrichtigen",
+          "notify_targets": "Push-Benachrichtigungsziele"
         },
         "data_description": {
           "sensor_b": "Der zweite Sensor; er muss dieselbe Maßeinheit wie Sensor A haben.",
@@ -30,7 +31,8 @@
           "model": "Wie die Kreuzungszeit geschätzt wird. Automatisch wählt ein Modell anhand des Sensortyps.",
           "window": "Wie viel jüngste Historie in die Schätzung einfließt.",
           "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur.",
-          "notify": "Zeigt eine dauerhafte Benachrichtigung, wenn dieses Paar sich kreuzt, optional nur in einer Richtung. Das Ereignis value_crossing_crossed wird unabhängig davon bei jeder Kreuzung ausgelöst."
+          "notify": "Benachrichtigt, wenn dieses Paar sich kreuzt, optional nur in einer Richtung. Zeigt eine dauerhafte Benachrichtigung und sendet an die unten gewählten Ziele. Das Ereignis value_crossing_crossed wird unabhängig davon bei jeder Kreuzung ausgelöst.",
+          "notify_targets": "Benachrichtigungs-Entitäten, an die die Kreuzung gesendet wird, etwa dein Telefon über die Home Assistant Companion App (notify.mobile_app_...). Leer lassen für nur die dauerhafte Benachrichtigung."
         }
       },
       "reconfigure": {
@@ -44,7 +46,8 @@
           "model": "Schätzmodell",
           "window": "Anpassungsfenster (Sekunden)",
           "daily_history": "Muster des Vortags verwenden",
-          "notify": "Bei Kreuzung benachrichtigen"
+          "notify": "Bei Kreuzung benachrichtigen",
+          "notify_targets": "Push-Benachrichtigungsziele"
         },
         "data_description": {
           "name": "Anzeigename für dieses Paar.",
@@ -54,7 +57,8 @@
           "model": "Wie die Kreuzungszeit geschätzt wird. Automatisch wählt ein Modell anhand des Sensortyps.",
           "window": "Wie viel jüngste Historie in die Schätzung einfließt.",
           "daily_history": "Projiziert den dynamischeren Sensor entlang seines eigenen Verlaufs der letzten 24 Stunden statt eines kurzen geradlinigen Trends. Am besten für tageszyklische Signale wie Temperatur.",
-          "notify": "Zeigt eine dauerhafte Benachrichtigung, wenn dieses Paar sich kreuzt, optional nur in einer Richtung. Das Ereignis value_crossing_crossed wird unabhängig davon bei jeder Kreuzung ausgelöst."
+          "notify": "Benachrichtigt, wenn dieses Paar sich kreuzt, optional nur in einer Richtung. Zeigt eine dauerhafte Benachrichtigung und sendet an die unten gewählten Ziele. Das Ereignis value_crossing_crossed wird unabhängig davon bei jeder Kreuzung ausgelöst.",
+          "notify_targets": "Benachrichtigungs-Entitäten, an die die Kreuzung gesendet wird, etwa dein Telefon über die Home Assistant Companion App (notify.mobile_app_...). Leer lassen für nur die dauerhafte Benachrichtigung."
         }
       }
     },

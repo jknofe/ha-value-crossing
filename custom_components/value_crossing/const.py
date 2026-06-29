@@ -15,6 +15,7 @@ CONF_BAND = "band"
 CONF_MODEL = "model"  # estimation-model override; surfaced by LOGIC-01/02
 CONF_DAILY_HISTORY = "daily_history"  # opt-in daily-pattern prediction (LOGIC-05)
 CONF_NOTIFY = "notify"  # persistent-notification gate + direction filter (LOGIC-04)
+CONF_NOTIFY_TARGETS = "notify_targets"  # notify.* entities to push to (LOGIC-06)
 
 # Notify dropdown options (LOGIC-04). Gates only the persistent notification; the
 # value_crossing_crossed event fires on every crossing regardless.

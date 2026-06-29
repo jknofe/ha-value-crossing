@@ -30,6 +30,7 @@ from .const import (
     CONF_DAILY_HISTORY,
     CONF_MODEL,
     CONF_NOTIFY,
+    CONF_NOTIFY_TARGETS,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
@@ -53,6 +54,7 @@ def _model_window_fields(
     window_default: float,
     daily_default: bool = False,
     notify_default: str = NOTIFY_NO,
+    notify_targets_default: list[str] | None = None,
 ) -> dict:
     """Schema entries for the per-pair model, window, daily flag + notify mode."""
     return {
@@ -85,6 +87,11 @@ def _model_window_fields(
                 translation_key="notify",
                 mode=SelectSelectorMode.DROPDOWN,
             )
+        ),
+        vol.Optional(
+            CONF_NOTIFY_TARGETS, default=notify_targets_default or []
+        ): EntitySelector(
+            EntitySelectorConfig(domain="notify", multiple=True)
         ),
     }
 
@@ -159,6 +166,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_WINDOW: user_input[CONF_WINDOW],
                         CONF_DAILY_HISTORY: user_input[CONF_DAILY_HISTORY],
                         CONF_NOTIFY: user_input[CONF_NOTIFY],
+                        CONF_NOTIFY_TARGETS: user_input[CONF_NOTIFY_TARGETS],
                     },
                 )
 
@@ -219,6 +227,7 @@ class ValueCrossingConfigFlow(ConfigFlow, domain=DOMAIN):
                     current.get(CONF_WINDOW, DEFAULT_WINDOW),
                     current.get(CONF_DAILY_HISTORY, False),
                     current.get(CONF_NOTIFY, NOTIFY_NO),
+                    current.get(CONF_NOTIFY_TARGETS, []),
                 ),
             }
         )

@@ -25,6 +25,7 @@ from .const import (
     CONF_DAILY_HISTORY,
     CONF_MODEL,
     CONF_NOTIFY,
+    CONF_NOTIFY_TARGETS,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
@@ -129,6 +130,9 @@ class PairCoordinator:
         self._model_override: str | None = entry.data.get(CONF_MODEL)
         self._daily_history: bool = bool(entry.data.get(CONF_DAILY_HISTORY, False))
         self._notify: str = entry.data.get(CONF_NOTIFY, NOTIFY_NO)
+        self._notify_targets: list[str] = list(
+            entry.data.get(CONF_NOTIFY_TARGETS, [])
+        )
         self._buffer = RollingBuffer(self.window)
         self._a_buffer = RollingBuffer(self.window)
         self._estimate = Estimate(None, None, STATUS_INSUFFICIENT_DATA)
@@ -461,31 +465,63 @@ class PairCoordinator:
         if direction is None:
             return
         self._last_cross_direction = direction
+        crossover_value = self.predicted_crossover_value
+        # Slim payload (LOGIC-07): identity + direction + cross-value only. The
+        # direction stays the enum token for automation matching / ENUM sensor
+        # parity; redundant measurement fields (raw values, diff, band) dropped.
         payload = {
             "entry_id": self.entry.entry_id,
             "name": self.name,
             "sensor_a": self.sensor_a,
             "sensor_b": self.sensor_b,
-            "value_a": _as_float(self.hass.states.get(self.sensor_a)),
-            "value_b": _as_float(self.hass.states.get(self.sensor_b)),
-            "difference": diff,
-            "band": self.band,
-            "crossover_value": self.predicted_crossover_value,
+            "crossover_value": crossover_value,
             "direction": direction,
         }
         self.hass.bus.async_fire(EVENT_CROSSED, payload)
         if self._notify == NOTIFY_NO or self._notify not in (NOTIFY_BOTH, direction):
             return
-        unit = self.source_unit or ""
-        message = (
-            f"{self.name}: {self.sensor_a} and {self.sensor_b} crossed "
-            f"({direction}). A = {payload['value_a']} {unit}, "
-            f"B = {payload['value_b']} {unit}, difference = {diff:.3g} {unit}, "
-            f"band = {self.band} {unit}."
-        )
+        title = f"Value Crossing: {self.name}"
+        message = self._crossing_message(direction, crossover_value)
+        # Dashboard record (kept always when the gate passes).
         persistent_notification.async_create(
             self.hass,
             message,
-            title=f"Value Crossing: {self.name}",
+            title=title,
             notification_id=f"value_crossing_{self.entry.entry_id}",
         )
+        # Mobile/native push (LOGIC-06): deliver to any configured notify.*
+        # targets in addition to the persistent notification. Best-effort.
+        if self._notify_targets:
+            self.hass.async_create_task(
+                self._async_push(title, message), eager_start=True
+            )
+
+    def _crossing_message(self, direction: str, crossover_value: float | None) -> str:
+        """Slim human-readable crossing message: name, direction, cross-value."""
+        direction_words = direction.replace("_", " ")
+        text = f"{self.name}: crossed {direction_words}"
+        if crossover_value is not None:
+            unit = self.source_unit or ""
+            text += f" at {crossover_value:.3g} {unit}".rstrip()
+        return text
+
+    async def _async_push(self, title: str, message: str) -> None:
+        """Push the crossing message to the configured notify.* entities."""
+        try:
+            await self.hass.services.async_call(
+                "notify",
+                "send_message",
+                {
+                    "entity_id": self._notify_targets,
+                    "title": title,
+                    "message": message,
+                },
+                blocking=True,
+            )
+        except Exception as err:  # noqa: BLE001 - delivery is best-effort
+            _LOGGER.warning(
+                "value_crossing: notify push failed for %s -> %s: %s",
+                self.name,
+                self._notify_targets,
+                err,
+            )

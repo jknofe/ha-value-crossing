@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
@@ -14,6 +14,7 @@ from custom_components.value_crossing.const import (
     CONF_BAND,
     CONF_DAILY_HISTORY,
     CONF_NOTIFY,
+    CONF_NOTIFY_TARGETS,
     CONF_PAIR_NAME,
     CONF_SENSOR_A,
     CONF_SENSOR_B,
@@ -344,14 +345,30 @@ async def test_remove_entry_deletes_entities(hass: HomeAssistant) -> None:
 _NOTIFY_PATH = "homeassistant.components.persistent_notification.async_create"
 
 
-async def _setup_notify(hass, notify, a, b):
+async def _setup_notify(hass, notify, a, b, targets=None):
     """Set up a pair with a notify mode and an out-of-band starting difference."""
     _set(hass, "sensor.a", str(a))
     _set(hass, "sensor.b", str(b))
-    entry = _entry(hass, **{CONF_NOTIFY: notify})
+    data = {CONF_NOTIFY: notify}
+    if targets is not None:
+        data[CONF_NOTIFY_TARGETS] = targets
+    entry = _entry(hass, **data)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
+
+
+def _capture_push(hass, *, raises=False):
+    """Register a fake notify.send_message and capture its calls (LOGIC-06)."""
+    calls: list[dict] = []
+
+    async def _handler(call):
+        calls.append(dict(call.data))
+        if raises:
+            raise RuntimeError("boom")
+
+    hass.services.async_register("notify", "send_message", _handler)
+    return calls
 
 
 async def _move(hass, a, b):
@@ -376,9 +393,10 @@ async def test_crossing_event_always_fires_and_notify_no_suppresses(
     assert ev["name"] == "Pair"
     assert ev["sensor_a"] == "sensor.a" and ev["sensor_b"] == "sensor.b"
     assert ev["entry_id"] == entry.entry_id
-    assert ev["band"] == 0.5
-    assert ev["value_a"] == 20.1 and ev["value_b"] == 20.0
-    assert abs(ev["difference"] - 0.1) < 1e-9
+    assert "crossover_value" in ev  # slimmed payload (LOGIC-07): cross-value kept
+    # Slimmed payload dropped the redundant measurement fields.
+    assert "value_a" not in ev and "value_b" not in ev
+    assert "difference" not in ev and "band" not in ev
     assert notify_mock.call_count == 0  # notify=no -> event but no notification
 
 
@@ -388,7 +406,10 @@ async def test_notify_both_creates_notification(hass: HomeAssistant) -> None:
     assert len(events) == 1
     assert notify_mock.call_count == 1
     args, kwargs = notify_mock.call_args
-    assert "Pair" in args[1]  # message mentions the pair name
+    message = args[1]
+    assert "Pair" in message  # message mentions the pair name
+    assert "crossed from above" in message  # LOGIC-07: direction in plain words
+    assert "sensor.a" not in message  # LOGIC-07: no sensor ids / raw dump
     assert kwargs["notification_id"] == f"value_crossing_{entry.entry_id}"
 
 
@@ -435,6 +456,81 @@ async def test_crossing_direction_sensor_crossed_from(hass: HomeAssistant) -> No
     entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
     direction = _by_suffix(entities, "_crossing_direction")
     assert hass.states.get(direction.entity_id).state == "from_above"
+
+
+# --- LOGIC-06: mobile push to notify targets --------------------------------
+
+
+async def test_push_to_targets_alongside_persistent(hass: HomeAssistant) -> None:
+    calls = _capture_push(hass)
+    await _setup_notify(hass, "both", 30, 20, targets=["notify.phone"])
+    events, notify_mock = await _move(hass, 20.1, 20)  # into the band
+    assert len(events) == 1
+    assert notify_mock.call_count == 1  # persistent kept
+    assert len(calls) == 1  # plus one push
+    push = calls[0]
+    assert push["entity_id"] == ["notify.phone"]
+    assert "Pair" in push["message"]
+    assert "crossed from above" in push["message"]
+    assert "Pair" in push["title"]
+
+
+async def test_no_push_when_targets_empty(hass: HomeAssistant) -> None:
+    calls = _capture_push(hass)
+    await _setup_notify(hass, "both", 30, 20, targets=[])
+    events, notify_mock = await _move(hass, 20.1, 20)
+    assert notify_mock.call_count == 1  # persistent only
+    assert calls == []  # no push without targets
+
+
+async def test_no_push_when_notify_no(hass: HomeAssistant) -> None:
+    calls = _capture_push(hass)
+    await _setup_notify(hass, "no", 30, 20, targets=["notify.phone"])
+    events, notify_mock = await _move(hass, 20.1, 20)
+    assert len(events) == 1  # event still fires
+    assert notify_mock.call_count == 0  # gate closed -> no persistent
+    assert calls == []  # and no push
+
+
+async def test_no_push_on_direction_mismatch(hass: HomeAssistant) -> None:
+    calls = _capture_push(hass)
+    await _setup_notify(hass, "from_below", 30, 20, targets=["notify.phone"])
+    events, notify_mock = await _move(hass, 20.1, 20)  # from_above crossing
+    assert events[0]["direction"] == "from_above"
+    assert notify_mock.call_count == 0
+    assert calls == []
+
+
+async def test_message_omits_value_when_crossover_none(
+    hass: HomeAssistant,
+) -> None:
+    # LOGIC-07: when the cross-value is unknown the message degrades gracefully
+    # (no trailing "at <value>", no literal "None").
+    from custom_components.value_crossing.coordinator import PairCoordinator
+
+    await _setup_notify(hass, "both", 30, 20)
+    with patch.object(
+        PairCoordinator,
+        "predicted_crossover_value",
+        new_callable=PropertyMock,
+        return_value=None,
+    ):
+        events, notify_mock = await _move(hass, 20.1, 20)
+    assert notify_mock.call_count == 1
+    message = notify_mock.call_args[0][1]
+    assert message == "Pair: crossed from above"
+    assert "None" not in message and " at " not in message
+
+
+async def test_push_failure_is_swallowed(hass: HomeAssistant) -> None:
+    calls = _capture_push(hass, raises=True)
+    await _setup_notify(hass, "both", 30, 20, targets=["notify.phone"])
+    events, notify_mock = await _move(hass, 20.1, 20)
+    # The push raised, but the event + persistent notification are unaffected
+    # and no exception escapes the state-change handler.
+    assert len(events) == 1
+    assert notify_mock.call_count == 1
+    assert len(calls) == 1
 
 
 async def test_crossing_direction_predicted_while_pending(

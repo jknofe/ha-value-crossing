@@ -60,11 +60,29 @@ stop importing and start exporting (and the reverse in the evening).
 | Difference | Live signed `A - B` | the sensors' unit |
 | Crossover value | Predicted value the sensors meet at | the sensors' unit |
 | Crossover ETA | Estimated wall-clock time of crossing | timestamp |
+| Crossing direction | Approach/crossed direction (`from_above`/`from_below`/`none`) | enum |
 | Crossed | On while the difference is within the band | binary |
 
 The crossover value and ETA report `unknown` when no crossing is predicted;
 their `status` attribute explains why (for example `diverging`,
 `asymptote_outside_band`, or `insufficient_data`).
+
+## Notifications
+
+When the pair crosses into the band, the integration fires the
+`value_crossing_crossed` event (payload: `entry_id`, `name`, `sensor_a`,
+`sensor_b`, `direction`, `crossover_value`) so you can drive your own
+automations. The event fires on every crossing regardless of the notify setting.
+
+Each pair also has a **Notify on crossing** option (`no` / both directions /
+only `from_below` / only `from_above`). When it allows the crossing, the
+integration shows a short persistent notification (pair name, direction, and the
+crossover value) and, if you select one or more **Push notification targets**,
+pushes the same message to them via `notify.send_message`. Pick any `notify.*`
+entity, such as your phone's `notify.mobile_app_...` from the Home Assistant
+Companion app, to get crossings on mobile devices (persistent notifications stay
+in the Home Assistant frontend only). Leave the targets empty for the persistent
+notification only.
 
 ## Install
 

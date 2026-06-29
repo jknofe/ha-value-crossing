@@ -22,7 +22,8 @@
           "model": "Estimation model",
           "window": "Fit window (seconds)",
           "daily_history": "Use last-day history pattern",
-          "notify": "Notify on crossing"
+          "notify": "Notify on crossing",
+          "notify_targets": "Push notification targets"
         },
         "data_description": {
           "sensor_b": "The second sensor; it must share Sensor A's unit of measurement.",
@@ -30,7 +31,8 @@
           "model": "How the crossing time is estimated. Auto picks a model from the sensor type.",
           "window": "How much recent history feeds the estimate.",
           "daily_history": "Project the more dynamic sensor along its own shape from the last 24 hours instead of a short straight-line trend. Best for daily-cyclic signals like temperature.",
-          "notify": "Show a persistent notification when this pair crosses, optionally only in one direction. The value_crossing_crossed event fires on every crossing regardless of this setting."
+          "notify": "Notify when this pair crosses, optionally only in one direction. Shows a persistent notification and pushes to any targets below. The value_crossing_crossed event fires on every crossing regardless of this setting.",
+          "notify_targets": "Notify entities to push the crossing to, such as your phone via the Home Assistant Companion app (notify.mobile_app_...). Leave empty for the persistent notification only."
         }
       },
       "reconfigure": {
@@ -44,7 +46,8 @@
           "model": "Estimation model",
           "window": "Fit window (seconds)",
           "daily_history": "Use last-day history pattern",
-          "notify": "Notify on crossing"
+          "notify": "Notify on crossing",
+          "notify_targets": "Push notification targets"
         },
         "data_description": {
           "name": "Friendly name for this pair.",
@@ -54,7 +57,8 @@
           "model": "How the crossing time is estimated. Auto picks a model from the sensor type.",
           "window": "How much recent history feeds the estimate.",
           "daily_history": "Project the more dynamic sensor along its own shape from the last 24 hours instead of a short straight-line trend. Best for daily-cyclic signals like temperature.",
-          "notify": "Show a persistent notification when this pair crosses, optionally only in one direction. The value_crossing_crossed event fires on every crossing regardless of this setting."
+          "notify": "Notify when this pair crosses, optionally only in one direction. Shows a persistent notification and pushes to any targets below. The value_crossing_crossed event fires on every crossing regardless of this setting.",
+          "notify_targets": "Notify entities to push the crossing to, such as your phone via the Home Assistant Companion app (notify.mobile_app_...). Leave empty for the persistent notification only."
         }
       }
     },
